@@ -12,7 +12,7 @@ const noResults = document.getElementById("no-results");
 async function loadJobs() {
   loading.style.display = "flex";
 
-  const res = await fetch("/api/jobs");
+  const res = await fetch("/jobs");
   const data = await res.json();
 
   allJobs = data.jobs || [];
