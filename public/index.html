@@ -2,13 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Job Scraper Dashboard</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
+
 <body>
   <div class="container">
     <header>
@@ -23,11 +21,7 @@
     </header>
 
     <div class="filters">
-      <input
-        type="text"
-        id="search"
-        placeholder="Search jobs by title, company, or location..."
-      />
+      <input id="search" placeholder="Search jobs…" />
       <select id="source-filter">
         <option value="all">All Sources</option>
         <option value="ashby">Ashby</option>
@@ -36,19 +30,19 @@
       <select id="sort-by">
         <option value="recent">Most Recent</option>
         <option value="oldest">Oldest First</option>
-        <option value="title">Title (A–Z)</option>
-        <option value="company">Company (A–Z)</option>
+        <option value="title">Title A–Z</option>
+        <option value="company">Company A–Z</option>
       </select>
     </div>
 
     <div id="loading" class="loading">
       <div class="spinner"></div>
-      <p>Loading jobs...</p>
+      <p>Loading jobs…</p>
     </div>
 
     <div id="jobs-container" class="jobs-grid"></div>
 
-    <div id="no-results" class="no-results" style="display: none;">
+    <div id="no-results" class="no-results" style="display:none;">
       <p>No jobs found matching your criteria.</p>
     </div>
 
