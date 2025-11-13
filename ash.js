@@ -52,17 +52,21 @@ async function fetchGoogleResults(site, keyword, daysBack) {
   const urls = new Set();
   let q = `site:${site}`;
   if (keyword) q += ` ${keyword}`;
+
   const params = new URLSearchParams({
     api_key: SERP_API_KEY,
     q,
     num: "10"
   });
+
   if (daysBack) params.set("tbs", `qdr:d${daysBack}`);
 
   const res = await fetch(`${GOOGLE_SEARCH_URL}?${params}`);
   const json = await res.json();
+
   const organic = json.organic_results || [];
   organic.forEach((r) => r.link && urls.add(r.link));
+
   return [...urls];
 }
 
@@ -88,16 +92,25 @@ async function fetchAshbyJobs(org) {
         jobBoard: jobBoardWithTeams(
           organizationHostedJobsPageName: $organizationHostedJobsPageName
         ) {
-          jobPostings { id title locationName workplaceType employmentType compensationTierSummary }
+          jobPostings { 
+            id 
+            title 
+            locationName 
+            workplaceType 
+            employmentType 
+            compensationTierSummary 
+          }
         }
       }
     `
   };
+
   const res = await fetch("https://jobs.ashbyhq.com/api/non-user-graphql", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   });
+
   const json = await res.json();
   return json.data?.jobBoard?.jobPostings || [];
 }
@@ -112,8 +125,14 @@ async function fetchAshbyDetail(org, jobId) {
           organizationHostedJobsPageName: $organizationHostedJobsPageName
           jobPostingId: $jobPostingId
         ) {
-          id title locationName workplaceType employmentType descriptionHtml
-          compensationTierSummary scrapeableCompensationSalarySummary
+          id 
+          title 
+          locationName 
+          workplaceType 
+          employmentType
+          descriptionHtml
+          compensationTierSummary
+          scrapeableCompensationSalarySummary
         }
       }
     `
@@ -124,6 +143,7 @@ async function fetchAshbyDetail(org, jobId) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   });
+
   const json = await res.json();
   return json.data?.jobPosting || null;
 }
@@ -197,38 +217,32 @@ async function main() {
   for (const org of ashOrgs) {
     const short = await fetchAshbyJobs(org);
 
-    const detailed = await Promise.all(
-      short.map((job) =>
-        limit(async () => {
-          const [detail, ts] = await Promise.all([
-            fetchAshbyDetail(org, job.id),
-            fetchAshbyTimestamp(org, job.id)
-          ]);
+    for (const job of short) {
+      const [detail, ts] = await Promise.all([
+        fetchAshbyDetail(org, job.id),
+        fetchAshbyTimestamp(org, job.id)
+      ]);
 
-          if (!passesDateFilter(ts, daysBack)) return null;
+      if (!passesDateFilter(ts, daysBack)) continue;
 
-          return {
-            source: "ashby",
-            organization: org,
-            id: job.id,
-            title: job.title,
-            locationName: detail?.locationName || job.locationName || "",
-            workplaceType: detail?.workplaceType || job.workplaceType || "",
-            employmentType: detail?.employmentType || job.employmentType || "",
-            compensation:
-              detail?.scrapeableCompensationSalarySummary ||
-              detail?.compensationTierSummary ||
-              job.compensationTierSummary ||
-              "",
-            url: `https://jobs.ashbyhq.com/${org}/${job.id}`,
-            description: stripHtml(detail?.descriptionHtml || ""),
-            timestamp: ts || ""
-          };
-        })
-      )
-    );
-
-    all.push(...detailed.filter(Boolean));
+      all.push({
+        source: "ashby",
+        organization: org,
+        id: job.id,
+        title: job.title,
+        locationName: detail?.locationName || job.locationName || "",
+        workplaceType: detail?.workplaceType || job.workplaceType || "",
+        employmentType: detail?.employmentType || job.employmentType || "",
+        compensation:
+          detail?.scrapeableCompensationSalarySummary ||
+          detail?.compensationTierSummary ||
+          job.compensationTierSummary ||
+          "",
+        url: `https://jobs.ashbyhq.com/${org}/${job.id}`,
+        description: stripHtml(detail?.descriptionHtml || ""),
+        timestamp: ts || ""
+      });
+    }
   }
 
   // GREENHOUSE
@@ -237,6 +251,7 @@ async function main() {
 
   for (const org of ghOrgs) {
     const jobs = await fetchGreenhouseJobs(org);
+
     for (const j of jobs) {
       const ts = j.created_at || j.updated_at;
       if (!passesDateFilter(ts, daysBack)) continue;
@@ -257,14 +272,14 @@ async function main() {
     }
   }
 
-  // SORT: MOST RECENT FIRST
+  // SORT LATEST FIRST
   all.sort((a, b) => {
     const A = Date.parse(a.timestamp) || 0;
     const B = Date.parse(b.timestamp) || 0;
     return B - A;
   });
 
-  // SAVE TO /tmp for Railway
+  // Save result
   fs.writeFileSync("/tmp/jobs.json", JSON.stringify(all, null, 2));
 
   console.log(JSON.stringify({ jobs: all, count: all.length }, null, 2));
