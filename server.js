@@ -1,55 +1,95 @@
+// server.js
 import express from "express";
 import path from "path";
-import { fileURLToPath } from "url";
+import fs from "fs";
 import { spawn } from "child_process";
 
 const app = express();
+const PORT = process.env.PORT || 8080;
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirnamePath = path.resolve();
 
-// Serve static frontend
-app.use(express.static(path.join(__dirname, "public")));
-app.use(express.json());
+// Serve public folder (HTML, JS, CSS)
+const publicPath = path.join(__dirnamePath, "public");
+app.use(express.static(publicPath));
 
-// Simple in-memory status flag
-let isRunning = false;
+// Debug log on startup
+console.log("[server] Public folder:", publicPath);
+if (fs.existsSync(publicPath)) {
+  console.log("[server] Files:", fs.readdirSync(publicPath));
+} else {
+  console.log("[server] WARNING: Public folder missing!");
+}
 
-// Endpoint to check status
-app.get("/api/status", (req, res) => {
-  res.json({ isRunning });
+// ===============================
+// API ENDPOINT: Return latest jobs
+// ===============================
+app.get("/api/jobs", (req, res) => {
+  const filePath = "/tmp/jobs.json";
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(200).json({
+      jobs: [],
+      count: 0,
+      lastUpdated: null
+    });
+  }
+
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const jobs = JSON.parse(raw);
+
+    res.status(200).json({
+      jobs,
+      count: jobs.length,
+      lastUpdated: fs.statSync(filePath).mtime
+    });
+  } catch (err) {
+    console.error("[server] Failed reading jobs.json", err);
+    res.status(500).json({ error: "Failed reading job cache" });
+  }
 });
 
-// Manual trigger if needed
-app.post("/api/scrape", async (req, res) => {
-  if (isRunning) return res.json({ status: "already-running" });
-
-  isRunning = true;
-  runScraper(req.body.days || 1);
+// ===============================
+// API: manual trigger (optional)
+// ===============================
+app.post("/api/scrape", (req, res) => {
+  runScraper(7);
   res.json({ status: "started" });
 });
 
-// Auto-run scraper
-function runScraper(daysBack = 1) {
-  console.log("[server] Auto-scraper triggered…");
+// ===============================
+// UI fallback route
+// ===============================
+app.get("*", (req, res) => {
+  res.sendFile(path.join(publicPath, "index.html"));
+});
+
+// ===============================
+// SCRAPER RUNNER
+// ===============================
+function runScraper(daysBack) {
+  console.log(`[server] Automatic scrape triggered for past ${daysBack} days...`);
 
   const child = spawn("node", ["ash.js", String(daysBack)], {
     stdio: "inherit"
   });
 
   child.on("close", (code) => {
-    console.log(`[server] Scraper completed with exit code ${code}`);
-    isRunning = false;
+    console.log(`[server] Scraper finished with code ${code}`);
   });
 }
 
-// Auto-scrape on startup
-runScraper(1);
+// Run immediately on startup (past week)
+runScraper(7);
 
-// Auto-scrape every 30 minutes
-setInterval(() => runScraper(1), 30 * 60 * 1000);
+// Run every 24 hours
+const ONE_DAY = 24 * 60 * 60 * 1000;
+setInterval(() => runScraper(7), ONE_DAY);
 
-const PORT = process.env.PORT || 8080;
+// ===============================
+// START SERVER
+// ===============================
 app.listen(PORT, () => {
   console.log(`[server] Listening on port ${PORT}`);
 });
