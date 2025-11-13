@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Scraper Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Job Board</h1>
+            <div class="header-info">
+                <div class="stats">
+                    <span id="job-count">0 jobs</span>
+                    <span id="last-updated">Never updated</span>
+                </div>
+                <button id="refresh-btn" class="btn-refresh">🔄 Refresh Data</button>
+            </div>
+        </header>
+
+        <div class="filters">
+            <input type="text" id="search" placeholder="Search jobs by title, company, or location..." />
+            <select id="source-filter">
+                <option value="all">All Sources</option>
+                <option value="ashby">Ashby</option>
+                <option value="greenhouse">Greenhouse</option>
+            </select>
+            <select id="sort-by">
+                <option value="recent">Most Recent</option>
+                <option value="title">Title (A-Z)</option>
+                <option value="company">Company (A-Z)</option>
+            </select>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Loading jobs...</p>
+        </div>
+
+        <div id="jobs-container" class="jobs-grid"></div>
+
+        <div id="no-results" class="no-results" style="display: none;">
+            <p>No jobs found matching your criteria.</p>
+        </div>
+
+        <div class="pagination">
+            <button id="prev-page" class="btn-page" disabled>← Previous</button>
+            <span id="page-info">Page 1</span>
+            <button id="next-page" class="btn-page">Next →</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+

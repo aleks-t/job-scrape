@@ -1,0 +1,20 @@
+{
+  "name": "job-scraper",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Job scraper for Ashby and Greenhouse with web dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "scrape": "node ash.js"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "cheerio": "^1.0.0-rc.12",
+    "html-entities": "^2.5.2",
+    "https-proxy-agent": "^7.0.2",
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3"
+  }
+}
+
