@@ -4,14 +4,43 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Serve static frontend
+// ======================================
+// STATIC FRONTEND
+// ======================================
 app.use(express.static(path.join(__dirname, "public")));
 
-// Run scraper function
+console.log("[server] Public folder:", path.join(__dirname, "public"));
+
+// ======================================
+// /jobs API ENDPOINT
+// ======================================
+app.get("/jobs", (req, res) => {
+  const file = "/tmp/jobs.json";
+
+  if (!fs.existsSync(file)) {
+    console.log("[server] No /tmp/jobs.json file yet");
+    return res.json({ jobs: [], count: 0 });
+  }
+
+  try {
+    const raw = fs.readFileSync(file, "utf8");
+    const parsed = JSON.parse(raw);
+    return res.json({ jobs: parsed, count: parsed.length });
+  } catch (err) {
+    console.error("[server] Error reading /tmp/jobs.json:", err);
+    return res.json({ jobs: [], count: 0 });
+  }
+});
+
+// ======================================
+// SCRAPER RUNNER
+// ======================================
 function runScraper() {
   console.log("[server] Starting scraper…");
 
@@ -20,31 +49,28 @@ function runScraper() {
     stdio: "inherit"
   });
 
-  scraper.on("close", code => {
+  scraper.on("close", (code) => {
     console.log(`[server] Scraper finished with code ${code}`);
   });
 }
 
-// API endpoint for jobs.json
-app.get("/api/jobs", (req, res) => {
-  try {
-    const data = fs.readFileSync("/tmp/jobs.json", "utf8");
-    res.json(JSON.parse(data));
-  } catch (err) {
-    res.json({ jobs: [], error: "No jobs scraped yet" });
-  }
-});
-
-// Trigger scrape on startup
+// Run scraper immediately on deploy
 console.log("[server] Automatic scrape triggered on startup...");
 runScraper();
 
-// Schedule scrape every 24 hours
-setInterval(() => {
-  console.log("[server] Daily scrape triggered…");
-  runScraper();
-}, 24 * 60 * 60 * 1000);
+// ======================================
+// DAILY SCRAPE
+// ======================================
+const DAY = 24 * 60 * 60 * 1000;
 
+setInterval(() => {
+  console.log("[server] Daily scrape triggered...");
+  runScraper();
+}, DAY);
+
+// ======================================
+// START SERVER
+// ======================================
 app.listen(PORT, () => {
   console.log(`[server] Listening on port ${PORT}`);
 });
