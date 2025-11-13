@@ -5,550 +5,182 @@ import fetch from "node-fetch";
 import fs from "fs";
 import { load } from "cheerio";
 import { decode } from "html-entities";
+import pLimit from "p-limit";
 
 // ================================
 // CONFIG
 // ================================
-const SERP_API_KEY = process.env.SERP_API_KEY || "";   // set on Railway
+const SERP_API_KEY = process.env.SERP_API_KEY || "";
 const GOOGLE_SEARCH_URL = "https://serpapi.com/search.json";
-const WEBSHARE_API_KEY = process.env.WEBSHARE_API_KEY || "";
-const WEBSHARE_PROXY_URL = "https://proxy.webshare.io/api/v2/proxy/list/";
 
-// concurrency tuned to avoid 429s
-const ORG_CONCURRENCY = 3;
-const JOB_CONCURRENCY = 2;
+const limit = pLimit(25); // HIGH concurrency but safe
 
-let proxyList = [];
-let proxyIndex = 0;
-const proxyStats = new Map();
-const blacklistedProxies = new Set();
-const REQUEST_TIMEOUT = 10000;
+const timestampCache = new Map();
 
 // ================================
-// HELPERS: PROXIES
+// HELPERS
 // ================================
-async function fetchProxies() {
-  if (!WEBSHARE_API_KEY) {
-    console.error("WEBSHARE_API_KEY not set, skipping proxy loading.");
-    return [];
-  }
-
-  try {
-    const allProxies = [];
-    let page = 1;
-    let hasMore = true;
-
-    while (hasMore) {
-      const response = await fetch(
-        `${WEBSHARE_PROXY_URL}?mode=direct&page=${page}&page_size=100`,
-        {
-          headers: {
-            Authorization: `Token ${WEBSHARE_API_KEY}`
-          }
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Failed to fetch proxies (page ${page}): ${response.status}`);
-        console.error(`Error details: ${errorText}`);
-        break;
-      }
-
-      const data = await response.json();
-      const proxies = data.results || [];
-
-      if (proxies.length === 0) {
-        break;
-      }
-
-      allProxies.push(...proxies);
-      hasMore = data.next !== null;
-      page++;
-    }
-
-    return allProxies;
-  } catch (err) {
-    console.error(`Error fetching proxies: ${err.message}`);
-    return [];
-  }
-}
-
-function getNextProxy() {
-  if (!proxyList.length) return null;
-
-  const availableProxies = proxyList.filter(
-    (_, idx) => !blacklistedProxies.has(idx)
-  );
-
-  if (availableProxies.length === 0) {
-    console.error("All proxies blacklisted, resetting...");
-    blacklistedProxies.clear();
-    return null;
-  }
-
-  let bestProxyIdx = proxyIndex;
-  let bestAvgTime = Infinity;
-
-  for (let i = 0; i < Math.min(10, proxyList.length); i++) {
-    const idx = (proxyIndex + i) % proxyList.length;
-
-    if (blacklistedProxies.has(idx)) continue;
-
-    const stats = proxyStats.get(idx);
-    if (stats) {
-      const avgTime = stats.totalTime / stats.requests;
-      if (avgTime < bestAvgTime) {
-        bestAvgTime = avgTime;
-        bestProxyIdx = idx;
-      }
-    } else {
-      bestProxyIdx = idx;
-      break;
-    }
-  }
-
-  const proxy = proxyList[bestProxyIdx];
-  proxyIndex = (bestProxyIdx + 1) % proxyList.length;
-
-  return {
-    url: `http://${proxy.username}:${proxy.password}@${proxy.proxy_address}:${proxy.port}`,
-    index: bestProxyIdx
-  };
-}
-
-function recordProxyPerformance(proxyIdx, responseTime, success) {
-  if (!proxyStats.has(proxyIdx)) {
-    proxyStats.set(proxyIdx, { requests: 0, totalTime: 0, failures: 0 });
-  }
-
-  const stats = proxyStats.get(proxyIdx);
-  stats.requests++;
-  stats.totalTime += responseTime;
-
-  if (!success) {
-    stats.failures++;
-
-    if (stats.requests >= 3 && stats.failures / stats.requests > 0.5) {
-      blacklistedProxies.add(proxyIdx);
-      console.error(
-        `Blacklisted proxy ${proxyIdx} (${stats.failures}/${stats.requests} failures)`
-      );
-    }
-  }
-}
-
-async function fetchWithRetry(url, options = {}, maxRetries = 3) {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const startTime = Date.now();
-    let proxyInfo = null;
-
-    try {
-      proxyInfo = getNextProxy();
-      if (proxyInfo) {
-        const { HttpsProxyAgent } = await import("https-proxy-agent");
-        options.agent = new HttpsProxyAgent(proxyInfo.url);
-      } else {
-        delete options.agent;
-      }
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-      options.signal = controller.signal;
-
-      const response = await fetch(url, options);
-      clearTimeout(timeoutId);
-
-      const responseTime = Date.now() - startTime;
-      if (proxyInfo) {
-        recordProxyPerformance(proxyInfo.index, responseTime, response.ok);
-      }
-
-      return response;
-    } catch (err) {
-      const responseTime = Date.now() - startTime;
-
-      if (proxyInfo) {
-        recordProxyPerformance(proxyInfo.index, responseTime, false);
-      }
-
-      if (attempt === maxRetries - 1) {
-        throw err;
-      }
-
-      await delay(Math.pow(2, attempt) * 100);
-    }
-  }
-}
-
-// ================================
-// MISC HELPERS
-// ================================
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 function stripHtml(html) {
   if (!html) return "";
-
   try {
     const decoded = decode(html);
     const $ = load(decoded);
-    let text = $.text();
-    return text.replace(/\s+/g, " ").trim();
-  } catch (err) {
-    try {
-      const decoded = decode(html);
-      let text = decoded.replace(/<[^>]+>/g, " ");
-      return text.replace(/\s+/g, " ").trim();
-    } catch {
-      let text = html.replace(/<[^>]+>/g, " ");
-      return text.replace(/\s+/g, " ").trim();
-    }
+    return $.text().replace(/\s+/g, " ").trim();
+  } catch {
+    return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   }
 }
 
 function parseArgs() {
   const args = process.argv.slice(2);
-
-  if (args.length === 0) {
-    return { keyword: null, daysBack: 7 };
+  if (args.length === 0) return { keyword: null, daysBack: 7 };
+  if (args.length === 1 && /^\d+$/.test(args[0])) {
+    return { keyword: null, daysBack: parseInt(args[0]) };
   }
-
-  if (args.length === 1) {
-    const arg = args[0];
-    if (/^\d+$/.test(arg)) {
-      return { keyword: null, daysBack: parseInt(arg, 10) };
-    } else {
-      return { keyword: arg, daysBack: null };
-    }
-  }
-
-  if (args.length === 2) {
-    return { keyword: args[0], daysBack: parseInt(args[1], 10) };
-  }
-
-  throw new Error(
-    "Usage: node ash.js [keyword] [days] | node ash.js [days] | node ash.js [keyword]"
-  );
-}
-
-function saveJSON(data) {
-  const file = `jobs_${new Date().toISOString().slice(0, 10)}.json`;
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-  console.error(`Saved JSON: ${file}`);
-}
-
-function saveCSV(rows) {
-  if (!rows.length) {
-    console.error("No rows to export in CSV.");
-    return;
-  }
-
-  const headers = [
-    "source",
-    "organization",
-    "id",
-    "title",
-    "locationName",
-    "workplaceType",
-    "employmentType",
-    "compensation",
-    "url",
-    "description",
-    "timestamp"
-  ];
-
-  const csv = [
-    headers.join(","),
-    ...rows.map(r =>
-      headers
-        .map(h => {
-          const val = r[h] ?? "";
-          return JSON.stringify(val);
-        })
-        .join(",")
-    )
-  ].join("\n");
-
-  const file = `jobs_${new Date().toISOString().slice(0, 10)}.csv`;
-  fs.writeFileSync(file, csv);
-  console.error(`Saved CSV: ${file}`);
+  if (args.length === 1) return { keyword: args[0], daysBack: null };
+  if (args.length === 2)
+    return { keyword: args[0], daysBack: parseInt(args[1]) };
+  throw new Error("Usage: node ash.js [keyword] [days]");
 }
 
 function passesDateFilter(timestampStr, daysBack) {
   if (!daysBack || !timestampStr) return true;
   const ts = Date.parse(timestampStr);
-  if (Number.isNaN(ts)) return true;
+  if (isNaN(ts)) return true;
   const cutoff = Date.now() - daysBack * 24 * 60 * 60 * 1000;
   return ts >= cutoff;
 }
 
-// ================================
-// SERPAPI FETCHERS
-// ================================
-async function fetchGoogleResults(site, keyword, daysBack, maxPages = 5) {
-  if (!SERP_API_KEY) {
-    console.error("SERP_API_KEY not set, skipping Google discovery for " + site);
-    return [];
-  }
-
+async function fetchGoogleResults(site, keyword, daysBack) {
   const urls = new Set();
+  let q = `site:${site}`;
+  if (keyword) q += ` ${keyword}`;
+  const params = new URLSearchParams({
+    api_key: SERP_API_KEY,
+    q,
+    num: "10"
+  });
+  if (daysBack) params.set("tbs", `qdr:d${daysBack}`);
 
-  let query = `site:${site}`;
-  if (keyword) query += ` ${keyword}`;
-
-  console.error(`Searching: ${query}`);
-  if (daysBack) console.error(`Days back (SerpAPI tbs): ${daysBack}`);
-
-  for (let page = 0; page < maxPages; page++) {
-    const params = new URLSearchParams({
-      api_key: SERP_API_KEY,
-      q: query,
-      num: "10",
-      start: String(page * 10)
-    });
-
-    if (daysBack) {
-      params.set("tbs", `qdr:d${daysBack}`);
-    }
-
-    try {
-      const response = await fetch(`${GOOGLE_SEARCH_URL}?${params}`);
-      const data = await response.json();
-
-      const organic = data.organic_results || [];
-      if (organic.length === 0) break;
-
-      organic.forEach(r => {
-        if (r.link) urls.add(r.link);
-      });
-    } catch (err) {
-      console.error(`Error fetching page ${page + 1} for ${site}: ${err.message}`);
-    }
-  }
-
+  const res = await fetch(`${GOOGLE_SEARCH_URL}?${params}`);
+  const json = await res.json();
+  const organic = json.organic_results || [];
+  organic.forEach((r) => r.link && urls.add(r.link));
   return [...urls];
 }
 
 // ================================
-// ASHBY EXTRACTORS
+// ASHBY
 // ================================
 function extractAshbyOrg(url) {
   try {
     const u = new URL(url);
     if (!u.hostname.includes("jobs.ashbyhq.com")) return null;
-
-    const parts = u.pathname.split("/").filter(Boolean);
-    return parts.length > 0 ? decodeURIComponent(parts[0]) : null;
+    return u.pathname.split("/").filter(Boolean)[0] || null;
   } catch {
     return null;
   }
 }
 
-async function fetchAshbyJobs(orgName) {
+async function fetchAshbyJobs(org) {
   const body = {
     operationName: "ApiJobBoardWithTeams",
-    variables: { organizationHostedJobsPageName: orgName },
+    variables: { organizationHostedJobsPageName: org },
     query: `
       query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) {
         jobBoard: jobBoardWithTeams(
           organizationHostedJobsPageName: $organizationHostedJobsPageName
         ) {
-          jobPostings {
-            id
-            title
-            locationName
-            workplaceType
-            employmentType
-            compensationTierSummary
-            __typename
-          }
-          __typename
+          jobPostings { id title locationName workplaceType employmentType compensationTierSummary }
         }
       }
     `
   };
-
-  try {
-    const fetchOptions = {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body)
-    };
-
-    const response = await fetchWithRetry(
-      "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams",
-      fetchOptions
-    );
-
-    if (!response.ok) {
-      console.error(`Ashby jobBoard HTTP ${response.status} for ${orgName}`);
-      return [];
-    }
-
-    const json = await response.json();
-    return json.data?.jobBoard?.jobPostings || [];
-  } catch (err) {
-    console.error(`Error fetching Ashby jobs for ${orgName}: ${err.message}`);
-    return [];
-  }
+  const res = await fetch("https://jobs.ashbyhq.com/api/non-user-graphql", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const json = await res.json();
+  return json.data?.jobBoard?.jobPostings || [];
 }
 
-async function fetchAshbyJobDetail(orgName, jobId) {
+async function fetchAshbyDetail(org, jobId) {
   const body = {
     operationName: "ApiJobPosting",
-    variables: {
-      organizationHostedJobsPageName: orgName,
-      jobPostingId: jobId
-    },
+    variables: { organizationHostedJobsPageName: org, jobPostingId: jobId },
     query: `
       query ApiJobPosting($organizationHostedJobsPageName: String!, $jobPostingId: String!) {
         jobPosting(
           organizationHostedJobsPageName: $organizationHostedJobsPageName
           jobPostingId: $jobPostingId
         ) {
-          id
-          title
-          departmentName
-          locationName
-          locationAddress
-          workplaceType
-          employmentType
-          descriptionHtml
-          isListed
-          isConfidential
-          teamNames
-          secondaryLocationNames
-          compensationTierSummary
-          scrapeableCompensationSalarySummary
-          __typename
+          id title locationName workplaceType employmentType descriptionHtml
+          compensationTierSummary scrapeableCompensationSalarySummary
         }
       }
     `
   };
 
-  try {
-    const fetchOptions = {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "apollographql-client-name": "frontend_non_user",
-        "apollographql-client-version": "0.1.0"
-      },
-      body: JSON.stringify(body)
-    };
-
-    const response = await fetchWithRetry(
-      "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobPosting",
-      fetchOptions
-    );
-
-    if (!response.ok) {
-      console.error(
-        `Ashby job detail HTTP ${response.status} for ${orgName}/${jobId}`
-      );
-      return null;
-    }
-
-    const json = await response.json();
-    return json.data?.jobPosting || null;
-  } catch (err) {
-    console.error(
-      `Error fetching Ashby detail for ${orgName}/${jobId}: ${err.message}`
-    );
-    return null;
-  }
+  const res = await fetch("https://jobs.ashbyhq.com/api/non-user-graphql", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const json = await res.json();
+  return json.data?.jobPosting || null;
 }
 
-// HTML scrape for timestamp
-async function fetchAshbyTimestamp(orgName, jobId) {
-  const url = `https://jobs.ashbyhq.com/${orgName}/${jobId}`;
-  try {
-    const res = await fetchWithRetry(url, { method: "GET" });
-    if (!res.ok) {
-      console.error(`Ashby timestamp HTTP ${res.status} for ${orgName}/${jobId}`);
-      return null;
-    }
+async function fetchAshbyTimestamp(org, jobId) {
+  if (timestampCache.has(jobId)) return timestampCache.get(jobId);
 
-    const html = await res.text();
-    const $ = load(html);
-    let datePosted = null;
+  const url = `https://jobs.ashbyhq.com/${org}/${jobId}`;
+  const res = await fetch(url);
+  const html = await res.text();
+  const $ = load(html);
 
-    $('script[type="application/ld+json"]').each((_, el) => {
-      if (datePosted) return;
-      try {
-        const text = $(el).text();
-        if (!text) return;
-        const json = JSON.parse(text);
-        const objs = Array.isArray(json) ? json : [json];
-        for (const obj of objs) {
-          if (obj && typeof obj === "object" && obj.datePosted) {
-            datePosted = obj.datePosted;
-            break;
-          }
+  let posted = null;
+
+  $('script[type="application/ld+json"]').each((_, el) => {
+    if (posted) return;
+    try {
+      const obj = JSON.parse($(el).text());
+      const arr = Array.isArray(obj) ? obj : [obj];
+      for (const o of arr) {
+        if (o.datePosted) {
+          posted = o.datePosted;
+          break;
         }
-      } catch {
-        // ignore
       }
-    });
+    } catch {}
+  });
 
-    if (datePosted) return datePosted;
-
-    const metaPublished = $('meta[property="article:published_time"]').attr(
-      "content"
-    );
-    if (metaPublished) return metaPublished;
-
-    return null;
-  } catch (err) {
-    console.error(
-      `Error fetching Ashby timestamp for ${orgName}/${jobId}: ${err.message}`
-    );
-    return null;
+  if (!posted) {
+    posted = $('meta[property="article:published_time"]').attr("content") || null;
   }
+
+  timestampCache.set(jobId, posted);
+  return posted;
 }
 
 // ================================
-// GREENHOUSE EXTRACTORS
+// GREENHOUSE
 // ================================
 function extractGreenhouseOrg(url) {
   try {
     const u = new URL(url);
     if (!u.hostname.includes("boards.greenhouse.io")) return null;
-
-    const parts = u.pathname.split("/").filter(Boolean);
-    return parts.length > 0 ? decodeURIComponent(parts[0]) : null;
+    return u.pathname.split("/").filter(Boolean)[0] || null;
   } catch {
     return null;
   }
 }
 
-async function fetchGreenhouseJobs(orgName) {
-  const url = `https://boards-api.greenhouse.io/v1/boards/${orgName}/jobs?content=true`;
-
-  try {
-    const fetchOptions = {
-      headers: { accept: "application/json" }
-    };
-
-    const res = await fetchWithRetry(url, fetchOptions);
-
-    if (!res.ok) {
-      console.error(`Greenhouse HTTP ${res.status} for ${orgName}`);
-      return [];
-    }
-
-    const data = await res.json();
-    return data.jobs || [];
-  } catch (err) {
-    console.error(`Error fetching Greenhouse jobs for ${orgName}: ${err.message}`);
-    return [];
-  }
-}
-
-function extractGreenhouseTimestamp(job) {
-  return job.created_at || job.updated_at || null;
+async function fetchGreenhouseJobs(org) {
+  const url = `https://boards-api.greenhouse.io/v1/boards/${org}/jobs?content=true`;
+  const res = await fetch(url);
+  const data = await res.json();
+  return data.jobs || [];
 }
 
 // ================================
@@ -557,165 +189,88 @@ function extractGreenhouseTimestamp(job) {
 async function main() {
   const { keyword, daysBack } = parseArgs();
 
-  console.error("=================================");
-  console.error("JOB SCRAPER");
-  console.error("=================================");
-  console.error(`Keyword: ${keyword || "none"}`);
-  console.error(`Days back: ${daysBack || "all time"}`);
-  console.error("");
+  console.error("=== JOB SCRAPER STARTED ===");
 
-  console.error("Loading Webshare proxies...");
-  proxyList = await fetchProxies();
-  console.error(`Loaded ${proxyList.length} proxies`);
-  console.error("");
-
-  const allJobs = [];
+  const all = [];
 
   // ASHBY
-  console.error("--- ASHBY SEARCH ---");
-  const ashbyUrls = await fetchGoogleResults(
-    "jobs.ashbyhq.com",
-    keyword,
-    daysBack
-  );
-  const ashbyOrgs = new Set(ashbyUrls.map(extractAshbyOrg).filter(Boolean));
-  console.error(`Found ${ashbyOrgs.size} Ashby organizations`);
+  const ashUrls = await fetchGoogleResults("jobs.ashbyhq.com", keyword, daysBack);
+  const ashOrgs = [...new Set(ashUrls.map(extractAshbyOrg).filter(Boolean))];
 
-  const ashbyOrgArray = [...ashbyOrgs];
+  for (const org of ashOrgs) {
+    const short = await fetchAshbyJobs(org);
 
-  for (let i = 0; i < ashbyOrgArray.length; i += ORG_CONCURRENCY) {
-    const batch = ashbyOrgArray.slice(i, i + ORG_CONCURRENCY);
+    const detailed = await Promise.all(
+      short.map((job) =>
+        limit(async () => {
+          const [detail, ts] = await Promise.all([
+            fetchAshbyDetail(org, job.id),
+            fetchAshbyTimestamp(org, job.id)
+          ]);
 
-    await Promise.all(
-      batch.map(async org => {
-        console.error(`\nFetching Ashby: ${org}...`);
-        const briefJobs = await fetchAshbyJobs(org);
+          if (!passesDateFilter(ts, daysBack)) return null;
 
-        const jobBatches = [];
-        for (let j = 0; j < briefJobs.length; j += JOB_CONCURRENCY) {
-          jobBatches.push(briefJobs.slice(j, j + JOB_CONCURRENCY));
-        }
-
-        const allOrgJobs = [];
-
-        for (const jobBatch of jobBatches) {
-          const jobPromises = jobBatch.map(async job => {
-            await delay(150 + Math.random() * 150);
-            const timestamp = await fetchAshbyTimestamp(org, job.id);
-
-            if (!passesDateFilter(timestamp, daysBack)) {
-              return null;
-            }
-
-            await delay(150 + Math.random() * 150);
-            const detail = await fetchAshbyJobDetail(org, job.id);
-
-            const compensation =
+          return {
+            source: "ashby",
+            organization: org,
+            id: job.id,
+            title: job.title,
+            locationName: detail?.locationName || job.locationName || "",
+            workplaceType: detail?.workplaceType || job.workplaceType || "",
+            employmentType: detail?.employmentType || job.employmentType || "",
+            compensation:
               detail?.scrapeableCompensationSalarySummary ||
               detail?.compensationTierSummary ||
               job.compensationTierSummary ||
-              "";
-
-            return {
-              source: "ashby",
-              organization: org,
-              id: job.id,
-              title: job.title,
-              locationName: job.locationName || detail?.locationName || "",
-              workplaceType: job.workplaceType || detail?.workplaceType || "",
-              employmentType:
-                job.employmentType || detail?.employmentType || "",
-              compensation,
-              url: `https://jobs.ashbyhq.com/${org}/${job.id}`,
-              description: stripHtml(detail?.descriptionHtml || ""),
-              timestamp: timestamp || ""
-            };
-          });
-
-          const batchResults = (await Promise.all(jobPromises)).filter(Boolean);
-          allOrgJobs.push(...batchResults);
-
-          await delay(500);
-        }
-
-        allJobs.push(...allOrgJobs);
-        console.error(`  -> ${allOrgJobs.length} jobs after date filter`);
-
-        await delay(1200 + Math.random() * 800);
-      })
+              "",
+            url: `https://jobs.ashbyhq.com/${org}/${job.id}`,
+            description: stripHtml(detail?.descriptionHtml || ""),
+            timestamp: ts || ""
+          };
+        })
+      )
     );
+
+    all.push(...detailed.filter(Boolean));
   }
 
   // GREENHOUSE
-  console.error("\n--- GREENHOUSE SEARCH ---");
-  const greenhouseUrls = await fetchGoogleResults(
-    "boards.greenhouse.io",
-    keyword,
-    daysBack
-  );
-  const greenhouseOrgs = new Set(
-    greenhouseUrls.map(extractGreenhouseOrg).filter(Boolean)
-  );
-  console.error(`Found ${greenhouseOrgs.size} Greenhouse organizations`);
+  const ghUrls = await fetchGoogleResults("boards.greenhouse.io", keyword, daysBack);
+  const ghOrgs = [...new Set(ghUrls.map(extractGreenhouseOrg).filter(Boolean))];
 
-  const greenhouseOrgArray = [...greenhouseOrgs];
+  for (const org of ghOrgs) {
+    const jobs = await fetchGreenhouseJobs(org);
+    for (const j of jobs) {
+      const ts = j.created_at || j.updated_at;
+      if (!passesDateFilter(ts, daysBack)) continue;
 
-  for (let i = 0; i < greenhouseOrgArray.length; i += ORG_CONCURRENCY) {
-    const batch = greenhouseOrgArray.slice(i, i + ORG_CONCURRENCY);
-
-    await Promise.all(
-      batch.map(async org => {
-        console.error(`\nFetching Greenhouse: ${org}...`);
-        const jobs = await fetchGreenhouseJobs(org);
-
-        const formattedJobs = jobs
-          .map(j => {
-            const ts = extractGreenhouseTimestamp(j);
-            if (!passesDateFilter(ts, daysBack)) return null;
-
-            return {
-              source: "greenhouse",
-              organization: org,
-              id: j.id,
-              title: j.title,
-              locationName: j.location?.name || "",
-              workplaceType: "",
-              employmentType: "",
-              compensation: "",
-              url: j.absolute_url,
-              description: stripHtml(j.content || ""),
-              timestamp: ts || ""
-            };
-          })
-          .filter(Boolean);
-
-        allJobs.push(...formattedJobs);
-        console.error(`  -> ${formattedJobs.length} jobs after date filter`);
-      })
-    );
+      all.push({
+        source: "greenhouse",
+        organization: org,
+        id: j.id,
+        title: j.title,
+        locationName: j.location?.name || "",
+        workplaceType: "",
+        employmentType: "",
+        compensation: "",
+        url: j.absolute_url,
+        description: stripHtml(j.content || ""),
+        timestamp: ts || ""
+      });
+    }
   }
 
-  // SORT BY TIMESTAMP DESC
-  allJobs.sort((a, b) => {
-    const at = a.timestamp ? Date.parse(a.timestamp) : 0;
-    const bt = b.timestamp ? Date.parse(b.timestamp) : 0;
-    return bt - at;
+  // SORT: MOST RECENT FIRST
+  all.sort((a, b) => {
+    const A = Date.parse(a.timestamp) || 0;
+    const B = Date.parse(b.timestamp) || 0;
+    return B - A;
   });
 
-  console.error("\n=================================");
-  console.error(`TOTAL JOBS (after filters): ${allJobs.length}`);
-  console.error(`Proxies used: ${proxyStats.size}`);
-  console.error(`Proxies blacklisted: ${blacklistedProxies.size}`);
-  console.error("=================================\n");
+  // SAVE TO /tmp for Railway
+  fs.writeFileSync("/tmp/jobs.json", JSON.stringify(all, null, 2));
 
-  saveJSON(allJobs);
-  saveCSV(allJobs);
-
-  // stdout -> server.js parses this
-  console.log(JSON.stringify(allJobs, null, 2));
+  console.log(JSON.stringify({ jobs: all, count: all.length }, null, 2));
 }
 
-main().catch(err => {
-  console.error("Fatal error:", err);
-  process.exit(1);
-});
+main();
