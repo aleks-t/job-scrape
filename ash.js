@@ -12,8 +12,6 @@ import { decode } from "html-entities";
 const SERP_API_KEY = process.env.SERP_API_KEY || "";
 const GOOGLE_SEARCH_URL = "https://serpapi.com/search.json";
 
-const limit = pLimit(25); // HIGH concurrency but safe
-
 const timestampCache = new Map();
 
 // ================================
