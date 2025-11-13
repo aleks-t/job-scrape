@@ -626,6 +626,7 @@ const WEBSHARE_PROXY_URL = "https://proxy.webshare.io/api/v2/proxy/list/";
 
 
 
+
 // Global proxy list
 let proxyList = [];
 let proxyIndex = 0;
@@ -637,17 +638,25 @@ const REQUEST_TIMEOUT = 10000; // 10 second timeout
 // HELPERS
 // ================================
 async function fetchProxies() {
+  if (!WEBSHARE_API_KEY) {
+    console.error("WEBSHARE_API_KEY is empty - skipping proxy load");
+    return [];
+  }
+
   try {
     const allProxies = [];
     let page = 1;
     let hasMore = true;
     
     while (hasMore) {
-      const response = await fetch(`${WEBSHARE_PROXY_URL}?mode=direct&page=${page}&page_size=100`, {
-        headers: {
-          "Authorization": `Token ${WEBSHSHARE_API_KEY}`
+      const response = await fetch(
+        `${WEBSHARE_PROXY_URL}?mode=direct&page=${page}&page_size=100`,
+        {
+          headers: {
+            "Authorization": `Token ${WEBSHARE_API_KEY}`
+          }
         }
-      });
+      );
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -665,7 +674,7 @@ async function fetchProxies() {
       
       allProxies.push(...proxies);
       
-      // Check if there's a next page
+      // Check if there is a next page
       hasMore = data.next !== null;
       page++;
     }
@@ -749,7 +758,7 @@ async function fetchWithRetry(url, options = {}, maxRetries = 3) {
     let proxyInfo = null;
     
     try {
-      // Get a fresh proxy for each attempt
+      // Get a fresh proxy for each attempt if we have any
       proxyInfo = getNextProxy();
       if (proxyInfo) {
         const { HttpsProxyAgent } = await import("https-proxy-agent");
@@ -795,25 +804,16 @@ function stripHtml(html) {
   if (!html) return "";
   
   try {
-    // First decode ALL HTML entities using html-entities library
     const decoded = decode(html);
-    
-    // Then load with cheerio to strip tags
     const $ = load(decoded);
-    
-    // Extract text content
     let text = $.text();
-    
-    // Collapse multiple spaces and trim
     return text.replace(/\s+/g, " ").trim();
   } catch (err) {
-    // Fallback: decode then strip with regex
     try {
       const decoded = decode(html);
       let text = decoded.replace(/<[^>]+>/g, " ");
       return text.replace(/\s+/g, " ").trim();
     } catch {
-      // Last resort
       let text = html.replace(/<[^>]+>/g, " ");
       return text.replace(/\s+/g, " ").trim();
     }
@@ -888,9 +888,9 @@ function saveCSV(rows) {
 
 // Timestamp helper: true if job passes daysBack filter
 function passesDateFilter(timestampStr, daysBack) {
-  if (!daysBack || !timestampStr) return true; // no filter or no timestamp
+  if (!daysBack || !timestampStr) return true;
   const ts = Date.parse(timestampStr);
-  if (Number.isNaN(ts)) return true; // don't aggressively drop unknowns
+  if (Number.isNaN(ts)) return true;
   const cutoff = Date.now() - daysBack * 24 * 60 * 60 * 1000;
   return ts >= cutoff;
 }
@@ -900,6 +900,11 @@ function passesDateFilter(timestampStr, daysBack) {
 // ================================
 async function fetchGoogleResults(site, keyword, daysBack, maxPages = 5) {
   const urls = new Set();
+  
+  if (!SERP_API_KEY) {
+    console.error("SERP_API_KEY is empty - cannot fetch Google results");
+    return [];
+  }
   
   let query = `site:${site}`;
   if (keyword) query += ` ${keyword}`;
@@ -924,7 +929,6 @@ async function fetchGoogleResults(site, keyword, daysBack, maxPages = 5) {
       const data = await response.json();
       
       const organic = data.organic_results || [];
-      
       if (organic.length === 0) break;
       
       organic.forEach(r => {
@@ -1206,7 +1210,6 @@ async function main() {
             fetchAshbyTimestamp(org, job.id)
           ]);
 
-          // If we have a daysBack filter and this job is older, drop it
           if (!passesDateFilter(timestamp, daysBack)) {
             return null;
           }
@@ -1305,11 +1308,9 @@ async function main() {
   console.error(`Proxies blacklisted: ${blacklistedProxies.size}`);
   console.error("=================================\n");
   
-  // Save files
   saveJSON(allJobs);
   saveCSV(allJobs);
   
-  // Also output to stdout for piping
   console.log(JSON.stringify(allJobs, null, 2));
 }
 
