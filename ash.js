@@ -5,7 +5,6 @@ import fetch from "node-fetch";
 import fs from "fs";
 import { load } from "cheerio";
 import { decode } from "html-entities";
-import pLimit from "p-limit";
 
 // ================================
 // CONFIG
