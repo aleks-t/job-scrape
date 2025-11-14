@@ -26,34 +26,43 @@ async function loadJobs() {
 }
 
 function renderJobs() {
+  const jobsContainer = document.getElementById("jobs-container");
+  const noResults = document.getElementById("no-results");
+
   jobsContainer.innerHTML = "";
 
-  const start = (page - 1) * pageSize;
-  const end = start + pageSize;
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const end = start + PAGE_SIZE;
   const current = filteredJobs.slice(start, end);
 
   if (current.length === 0) {
     noResults.style.display = "block";
     return;
   }
+
   noResults.style.display = "none";
 
+  // THIS IS WHERE THE ERROR COMES FROM
   current.forEach(j => {
     const div = document.createElement("div");
-    div.className = "job-card";
 
+    const desc =
+      j.description
+        ? j.description.substring(0, 200)
+        : "No description available";
+
+    div.className = "job-card";
     div.innerHTML = `
       <h3><a href="${j.url}" target="_blank">${j.title}</a></h3>
       <p class="company">${j.organization}</p>
-      <p class="meta">${j.locationName || "No location"} • ${j.timestamp}</p>
-      <p class="desc">${j.description.substring(0, 200)}...</p>
+      <p class="meta">${j.locationName || ""}</p>
+      <p class="desc">${desc}</p>
     `;
+
     jobsContainer.appendChild(div);
   });
-
-  document.getElementById("page-info").textContent =
-    `Page ${page} of ${Math.ceil(filteredJobs.length / pageSize)}`;
 }
+
 
 function applyFilters() {
   const q = document.getElementById("search").value.toLowerCase();
