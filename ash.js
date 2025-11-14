@@ -29,6 +29,10 @@ console.log("[scraper] Days back:", ARG_DAYS);
 // ================================
 // HELPERS
 // ================================
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function todayMinus(daysBack) {
   const d = new Date();
   d.setDate(d.getDate() - daysBack);
@@ -236,6 +240,9 @@ async function main() {
     const list = await fetchAshbyJobs(org);
 
     for (const j of list) {
+      // Add delay between requests to avoid rate limiting
+      await delay(300);
+      
       const detail = await fetchAshbyDetail(org, j.id);
 
       all.push({
@@ -260,6 +267,9 @@ async function main() {
   for (const org of greenhouseOrgs) {
     console.log("[scraper] Fetching Greenhouse jobs:", org);
 
+    // Add delay between organizations to avoid rate limiting
+    await delay(500);
+    
     const jobs = await fetchGreenhouseJobs(org);
 
     for (const j of jobs) {

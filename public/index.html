@@ -9,16 +9,15 @@
 
 <body>
   <div class="container">
-    <header>
-      <h1>🔍 Job Board</h1>
-      <div class="header-info">
-        <div class="stats">
-          <span id="job-count">0 jobs</span>
-          <span id="last-updated">Never updated</span>
-        </div>
-        <button id="refresh-btn" class="btn-refresh">🔄 Refresh Data</button>
-      </div>
-    </header>
+     <header>
+       <h1>🔍 Job Board</h1>
+       <div class="header-info">
+         <div class="stats">
+           <span id="job-count">0 jobs</span>
+           <span id="last-updated">Never updated</span>
+         </div>
+       </div>
+     </header>
 
     <div class="filters">
       <input id="search" placeholder="Search jobs…" />
@@ -44,12 +43,6 @@
 
     <div id="no-results" class="no-results" style="display:none;">
       <p>No jobs found matching your criteria.</p>
-    </div>
-
-    <div class="pagination">
-      <button id="prev-page" class="btn-page" disabled>← Previous</button>
-      <span id="page-info">Page 1</span>
-      <button id="next-page" class="btn-page">Next →</button>
     </div>
   </div>
 
