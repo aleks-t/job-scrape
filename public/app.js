@@ -26,13 +26,10 @@ async function loadJobs() {
 }
 
 function renderJobs() {
-  const jobsContainer = document.getElementById("jobs-container");
-  const noResults = document.getElementById("no-results");
-
   jobsContainer.innerHTML = "";
 
-  const start = (currentPage - 1) * PAGE_SIZE;
-  const end = start + PAGE_SIZE;
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
   const current = filteredJobs.slice(start, end);
 
   if (current.length === 0) {
@@ -42,12 +39,11 @@ function renderJobs() {
 
   noResults.style.display = "none";
 
-  // THIS IS WHERE THE ERROR COMES FROM
   current.forEach(j => {
     const div = document.createElement("div");
 
     const desc =
-      j.description
+      j.description && typeof j.description === "string"
         ? j.description.substring(0, 200)
         : "No description available";
 
@@ -61,8 +57,15 @@ function renderJobs() {
 
     jobsContainer.appendChild(div);
   });
-}
 
+  // Update pagination display
+  document.getElementById("page-info").textContent =
+    `Page ${page} of ${Math.ceil(filteredJobs.length / pageSize)}`;
+
+  document.getElementById("prev-page").disabled = page === 1;
+  document.getElementById("next-page").disabled =
+    page * pageSize >= filteredJobs.length;
+}
 
 function applyFilters() {
   const q = document.getElementById("search").value.toLowerCase();
@@ -112,13 +115,13 @@ document.getElementById("prev-page").onclick = () => {
   }
 };
 
-// Filter listeners
+// Filters
 document.getElementById("search").oninput = applyFilters;
 document.getElementById("source-filter").onchange = applyFilters;
 document.getElementById("sort-by").onchange = applyFilters;
 
 document.getElementById("refresh-btn").onclick = loadJobs;
 
-// Initial load
+// Initial sync
 loadJobs();
-setInterval(loadJobs, 30_000); // refresh every 30 seconds
+setInterval(loadJobs, 30_000);
