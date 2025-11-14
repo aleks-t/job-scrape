@@ -1,74 +1,111 @@
-// ============================================
-// ash.js – Unified Ashby + Greenhouse scraper
-// ============================================
-
+// ================================
+// IMPORTS
+// ================================
 import fetch from "node-fetch";
 import fs from "fs";
+import { decode } from "html-entities";
 
+// ================================
+// ENV VARIABLES
+// ================================
+const SERP_API_KEY = process.env.SERP_API_KEY;
+const WEBSHARE_API_KEY = process.env.WEBSHARE_API_KEY;
+
+if (!SERP_API_KEY) console.error("❌ SERP_API_KEY missing");
+if (!WEBSHARE_API_KEY) console.error("❌ WEBSHARE_API_KEY missing");
+
+// ================================
 // CLI ARGS
-const ARG_SEARCH = process.argv[2] && isNaN(process.argv[2]) ? process.argv[2] : null;
-const ARG_DAYS = Number(isNaN(process.argv[2]) ? process.argv[3] : process.argv[2]) || 3;
+// ================================
+const ARG_SEARCH =
+  process.argv[2] && isNaN(process.argv[2]) ? process.argv[2] : null;
 
-console.log("Search:", ARG_SEARCH || "none");
-console.log("Days back:", ARG_DAYS);
+const ARG_DAYS =
+  Number(isNaN(process.argv[2]) ? process.argv[3] : process.argv[2]) || 3;
 
-// SERP API CONFIG
-const SERP_API_KEY = "REPLACE_WITH_YOUR_KEY";
-const GOOGLE_SEARCH_URL = "https://serpapi.com/search.json";
+console.log("[scraper] Search:", ARG_SEARCH || "none");
+console.log("[scraper] Days back:", ARG_DAYS);
 
-// TIME HELPERS
-const now = Date.now();
-const cutoffTime = now - ARG_DAYS * 24 * 60 * 60 * 1000;
-
-// -------------------------------
-// SERP DISCOVERY
-// -------------------------------
-async function fetchGoogleResults(site, keyword, daysBack, maxPages = 4) {
-  const urls = new Set();
-  let q = `site:${site}`;
-  if (keyword) q += ` ${keyword}`;
-
-  for (let page = 0; page < maxPages; page++) {
-    const params = new URLSearchParams({
-      api_key: SERP_API_KEY,
-      q,
-      num: "10",
-      start: (page * 10).toString(),
-      tbs: `qdr:d${daysBack}`
-    });
-
-    try {
-      const r = await fetch(`${GOOGLE_SEARCH_URL}?${params.toString()}`);
-      const json = await r.json();
-      const organic = json.organic_results || [];
-      organic.forEach(o => o.link && urls.add(o.link));
-      if (organic.length === 0) break;
-    } catch (e) {
-      console.log("SERP error page", page + 1, e.message);
-    }
-  }
-  return [...urls];
+// ================================
+// HELPERS
+// ================================
+function todayMinus(daysBack) {
+  const d = new Date();
+  d.setDate(d.getDate() - daysBack);
+  return d.toISOString().slice(0, 10);
 }
 
-// -------------------------------
-// ASHBY HELPERS
-// -------------------------------
+function stripHtml(html) {
+  if (!html) return "";
+  const decoded = decode(html);
+  return decoded.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function extractAshbySlug(url) {
   try {
     const u = new URL(url);
     if (!u.hostname.includes("jobs.ashbyhq.com")) return null;
-    const parts = u.pathname.split("/").filter(Boolean);
-    return parts[0] || null;
+    return u.pathname.split("/").filter(Boolean)[0] || null;
   } catch {
     return null;
   }
 }
 
-// Ashby job list
-async function fetchAshbyJobs(slug) {
-  const body = JSON.stringify({
+function extractGreenhouseSlug(url) {
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes("boards.greenhouse.io")) return null;
+    return u.pathname.split("/").filter(Boolean)[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+// ================================
+// SERP FETCHER
+// ================================
+async function serpSearch(site, keyword, daysBack) {
+  const query = keyword
+    ? `site:${site} ${keyword}`
+    : `site:${site}`;
+
+  const params = new URLSearchParams({
+    api_key: SERP_API_KEY,
+    q: query,
+    num: "10",
+    start: "0",
+  });
+
+  if (daysBack) {
+    params.set("tbs", `qdr:d${daysBack}`);
+  }
+
+  const urls = new Set();
+
+  try {
+    const res = await fetch(`https://serpapi.com/search.json?${params}`);
+    const json = await res.json();
+
+    if (json.organic_results) {
+      json.organic_results.forEach(r => {
+        if (r.link) urls.add(r.link);
+      });
+    }
+
+  } catch (err) {
+    console.error("[scraper] SERP error:", err.message);
+  }
+
+  return [...urls];
+}
+
+// ================================
+// ASHBY FETCHERS
+// ================================
+async function fetchAshbyJobs(org) {
+  const body = {
     operationName: "ApiJobBoardWithTeams",
-    variables: { organizationHostedJobsPageName: slug },
+    variables: { organizationHostedJobsPageName: org },
     query: `
       query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) {
         jobBoard: jobBoardWithTeams(
@@ -80,203 +117,174 @@ async function fetchAshbyJobs(slug) {
             locationName
             workplaceType
             employmentType
-            updatedAt
+            compensationTierSummary
           }
         }
       }
     `
-  });
+  };
 
   try {
-    const r = await fetch(
+    const res = await fetch(
       "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body
+        body: JSON.stringify(body)
       }
     );
 
-    const json = await r.json();
+    if (!res.ok) {
+      console.error(`[scraper] Ashby list error ${res.status} for ${org}`);
+      return [];
+    }
+
+    const json = await res.json();
     return json.data?.jobBoard?.jobPostings || [];
-  } catch (e) {
-    console.log("Ashby error for slug", slug, e.message);
+
+  } catch (err) {
+    console.error(`[scraper] Ashby list fail for ${org}:`, err.message);
     return [];
   }
 }
 
-// Ashby detail (optional description)
-async function fetchAshbyDetail(slug, id) {
-  const body = JSON.stringify({
+async function fetchAshbyDetail(org, id) {
+  const body = {
     operationName: "ApiJobPosting",
-    variables: {
-      organizationHostedJobsPageName: slug,
-      jobPostingId: id.toString()
-    },
+    variables: { organizationHostedJobsPageName: org, jobPostingId: id },
     query: `
-      query ApiJobPosting(
-        $organizationHostedJobsPageName: String!,
-        $jobPostingId: String!
-      ) {
+      query ApiJobPosting($organizationHostedJobsPageName: String!, $jobPostingId: String!) {
         jobPosting(
-          organizationHostedJobsPageName: $organizationHostedJobsPageName,
+          organizationHostedJobsPageName: $organizationHostedJobsPageName
           jobPostingId: $jobPostingId
         ) {
           id
+          title
+          locationName
+          workplaceType
+          employmentType
           descriptionHtml
+          compensationTierSummary
         }
       }
     `
-  });
+  };
 
   try {
-    const r = await fetch(
+    const res = await fetch(
       "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobPosting",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body
+        body: JSON.stringify(body)
       }
     );
-    const json = await r.json();
+
+    if (!res.ok) return null;
+
+    const json = await res.json();
     return json.data?.jobPosting || null;
+
   } catch {
     return null;
   }
 }
 
-// -------------------------------
-// GREENHOUSE HELPERS
-// -------------------------------
-function extractGreenhouseSlug(url) {
+// ================================
+// GREENHOUSE FETCHER
+// ================================
+async function fetchGreenhouseJobs(org) {
   try {
-    const u = new URL(url);
-    if (!u.hostname.includes("boards.greenhouse.io")) return null;
-    const parts = u.pathname.split("/").filter(Boolean);
-    return parts[0] || null;
+    const res = await fetch(
+      `https://boards-api.greenhouse.io/v1/boards/${org}/jobs?content=true`
+    );
+
+    if (!res.ok) return [];
+
+    const json = await res.json();
+    return json.jobs || [];
+
   } catch {
-    return null;
-  }
-}
-
-async function fetchGreenhouseJobs(slug) {
-  const url = `https://boards-api.greenhouse.io/v1/boards/${slug}/jobs?content=true`;
-
-  try {
-    const r = await fetch(url);
-    const data = await r.json();
-    return data.jobs || [];
-  } catch (e) {
-    console.log("Greenhouse error for", slug, e.message);
     return [];
   }
 }
 
-// -------------------------------
+// ================================
 // MAIN
-// -------------------------------
+// ================================
 async function main() {
   console.log("=== SERP DISCOVERY ===");
 
-  const ashbyUrls = await fetchGoogleResults(
-    "jobs.ashbyhq.com",
-    ARG_SEARCH,
-    ARG_DAYS
-  );
-  const ghUrls = await fetchGoogleResults(
-    "boards.greenhouse.io",
-    ARG_SEARCH,
-    ARG_DAYS
-  );
+  // Discover orgs
+  const ashbyLinks = await serpSearch("jobs.ashbyhq.com", ARG_SEARCH, ARG_DAYS);
+  const greenhouseLinks = await serpSearch("boards.greenhouse.io", ARG_SEARCH, ARG_DAYS);
 
-  const ashbySlugs = [...new Set(ashbyUrls.map(extractAshbySlug).filter(Boolean))];
-  const ghSlugs = [...new Set(ghUrls.map(extractGreenhouseSlug).filter(Boolean))];
+  const ashbyOrgs = [...new Set(ashbyLinks.map(extractAshbySlug).filter(Boolean))];
+  const greenhouseOrgs = [...new Set(greenhouseLinks.map(extractGreenhouseSlug).filter(Boolean))];
 
-  console.log("Ashby orgs:", ashbySlugs.length);
-  console.log("Greenhouse orgs:", ghSlugs.length);
+  console.log("[scraper] Ashby orgs:", ashbyOrgs.length);
+  console.log("[scraper] Greenhouse orgs:", greenhouseOrgs.length);
 
-  const finalJobs = [];
+  const all = [];
 
-  // -------- ASHBY SCRAPE --------
-  for (const slug of ashbySlugs) {
-    console.log("Fetching Ashby:", slug);
+  // =======================
+  // ASHBY
+  // =======================
+  for (const org of ashbyOrgs) {
+    console.log("[scraper] Fetching Ashby jobs:", org);
 
-    const jobs = await fetchAshbyJobs(slug);
+    const list = await fetchAshbyJobs(org);
 
-    const recent = jobs.filter(j =>
-      j.updatedAt && new Date(j.updatedAt).getTime() >= cutoffTime
-    );
+    for (const j of list) {
+      const detail = await fetchAshbyDetail(org, j.id);
 
-    if (recent.length === 0) continue;
-
-    for (const j of recent) {
-      const detail = await fetchAshbyDetail(slug, j.id);
-      finalJobs.push({
+      all.push({
         source: "ashby",
-        organization: slug,
+        organization: org,
         id: j.id,
-        title: j.title,
-        locationName: j.locationName || "",
-        workplaceType: j.workplaceType || "",
-        employmentType: j.employmentType || "",
-        url: `https://jobs.ashbyhq.com/${slug}/${j.id}`,
-        timestamp: j.updatedAt,
-        description: detail?.descriptionHtml
-          ? stripHtml(detail.descriptionHtml)
-          : ""
+        title: detail?.title || j.title,
+        locationName: detail?.locationName || j.locationName,
+        workplaceType: detail?.workplaceType || j.workplaceType,
+        employmentType: detail?.employmentType || j.employmentType,
+        compensation: detail?.compensationTierSummary || j.compensationTierSummary || "",
+        description: detail?.descriptionHtml ? stripHtml(detail.descriptionHtml) : "",
+        url: `https://jobs.ashbyhq.com/${org}/${j.id}`,
+        timestamp: new Date().toISOString()
       });
     }
   }
 
-  // -------- GREENHOUSE SCRAPE --------
-  for (const slug of ghSlugs) {
-    console.log("Fetching Greenhouse:", slug);
+  // =======================
+  // GREENHOUSE
+  // =======================
+  for (const org of greenhouseOrgs) {
+    console.log("[scraper] Fetching Greenhouse jobs:", org);
 
-    const jobs = await fetchGreenhouseJobs(slug);
+    const jobs = await fetchGreenhouseJobs(org);
 
-    const recent = jobs.filter(j => {
-      const t = j.updated_at || j.created_at;
-      return t && new Date(t).getTime() >= cutoffTime;
-    });
-
-    finalJobs.push(
-      ...recent.map(j => ({
+    for (const j of jobs) {
+      all.push({
         source: "greenhouse",
-        organization: slug,
+        organization: org,
         id: j.id,
         title: j.title,
         locationName: j.location?.name || "",
         workplaceType: "",
         employmentType: "",
+        compensation: "",
+        description: stripHtml(j.content),
         url: j.absolute_url,
-        timestamp: j.updated_at || j.created_at,
-        description: stripHtml(j.content || "")
-      }))
-    );
+        timestamp: new Date().toISOString()
+      });
+    }
   }
 
-  // -------- FILTER BY SEARCH TERM --------
-  let filtered = finalJobs;
-  if (ARG_SEARCH) {
-    const k = ARG_SEARCH.toLowerCase();
-    filtered = finalJobs.filter(j =>
-      j.title.toLowerCase().includes(k) ||
-      j.organization.toLowerCase().includes(k)
-    );
-  }
+  console.log("[scraper] Total jobs:", all.length);
 
-  // SORT BY DATE DESC
-  filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-  console.log("Total jobs:", filtered.length);
-
-  fs.writeFileSync("jobs.json", JSON.stringify(filtered, null, 2));
-  console.log("Saved jobs.json");
+  fs.writeFileSync("jobs.json", JSON.stringify(all, null, 2));
+  console.log("[scraper] Saved jobs.json");
 }
 
-// Strip HTML tags
-function stripHtml(html) {
-  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-main();
+main().catch(err => {
+  console.error("Fatal error:", err);
+});
