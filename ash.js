@@ -50,7 +50,7 @@ function extractAshbySlug(url) {
     const u = new URL(url);
     if (!u.hostname.includes("jobs.ashbyhq.com")) return null;
     return u.pathname.split("/").filter(Boolean)[0] || null;
-  } catch {
+    } catch {
     return null;
   }
 }
@@ -73,17 +73,17 @@ async function serpSearch(site, keyword, daysBack) {
     ? `site:${site} ${keyword}`
     : `site:${site}`;
 
-  const params = new URLSearchParams({
-    api_key: SERP_API_KEY,
-    q: query,
-    num: "10",
+    const params = new URLSearchParams({
+      api_key: SERP_API_KEY,
+      q: query,
+      num: "10",
     start: "0",
-  });
-
-  if (daysBack) {
-    params.set("tbs", `qdr:d${daysBack}`);
-  }
-
+    });
+    
+    if (daysBack) {
+      params.set("tbs", `qdr:d${daysBack}`);
+    }
+    
   const urls = new Set();
 
   try {
@@ -95,11 +95,11 @@ async function serpSearch(site, keyword, daysBack) {
         if (r.link) urls.add(r.link);
       });
     }
-
-  } catch (err) {
+      
+    } catch (err) {
     console.error("[scraper] SERP error:", err.message);
   }
-
+  
   return [...urls];
 }
 
@@ -132,9 +132,9 @@ async function fetchAshbyJobs(org) {
     const res = await fetch(
       "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams",
       {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body)
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
       }
     );
 
@@ -237,17 +237,20 @@ async function main() {
   for (const org of ashbyOrgs) {
     console.log("[scraper] Fetching Ashby jobs:", org);
 
+    // Add delay before fetching each org to avoid rate limiting
+    await delay(1000);
+    
     const list = await fetchAshbyJobs(org);
 
     for (const j of list) {
-      // Add delay between requests to avoid rate limiting
-      await delay(300);
+      // Add delay between requests to avoid rate limiting (increased to 800ms)
+      await delay(800);
       
       const detail = await fetchAshbyDetail(org, j.id);
 
       all.push({
-        source: "ashby",
-        organization: org,
+            source: "ashby",
+            organization: org,
         id: j.id,
         title: detail?.title || j.title,
         locationName: detail?.locationName || j.locationName,
@@ -267,11 +270,11 @@ async function main() {
   for (const org of greenhouseOrgs) {
     console.log("[scraper] Fetching Greenhouse jobs:", org);
 
-    // Add delay between organizations to avoid rate limiting
-    await delay(500);
+    // Add delay between organizations to avoid rate limiting (increased to 1000ms)
+    await delay(1000);
     
-    const jobs = await fetchGreenhouseJobs(org);
-
+      const jobs = await fetchGreenhouseJobs(org);
+      
     for (const j of jobs) {
       all.push({
         source: "greenhouse",

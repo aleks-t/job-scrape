@@ -57,9 +57,13 @@ function renderJobs() {
 
     const companyHeader = document.createElement("div");
     companyHeader.className = "company-header";
+    
+    // Get company initial for icon
+    const initial = company.charAt(0).toUpperCase();
+    
     companyHeader.innerHTML = `
       <div class="company-name">
-        <span class="company-icon">🏢</span>
+        <div class="company-icon">${initial}</div>
         <span class="name">${escapeHtml(company)}</span>
         <span class="job-count-badge">${jobs.length} job${jobs.length > 1 ? 's' : ''}</span>
       </div>
