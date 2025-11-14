@@ -16,13 +16,14 @@ async function loadJobs() {
   const data = await res.json();
 
   allJobs = data.jobs || [];
-  filteredJobs = allJobs;
 
   jobCount.textContent = `${allJobs.length} jobs`;
   lastUpdated.textContent = `Updated: ${new Date().toLocaleString()}`;
 
   loading.style.display = "none";
-  renderJobs();
+  
+  // Apply current filters instead of showing all jobs
+  applyFilters();
 }
 
 function renderJobs() {
@@ -83,8 +84,10 @@ function renderJobs() {
         </div>
       ` : '';
 
-      const description = j.description ? 
-        j.description.substring(0, 200) + (j.description.length > 200 ? '...' : '') : 
+      // Format the description into organized sections
+      const fullDescription = j.description ? formatDescription(j.description) : '';
+      const shortPreview = j.description ? 
+        escapeHtml(j.description.substring(0, 200)) + (j.description.length > 200 ? '...' : '') : 
         '';
 
       jobCard.innerHTML = `
@@ -103,16 +106,16 @@ function renderJobs() {
         
         ${compensation}
         
-        ${description ? `
+        ${shortPreview ? `
           <div class="job-description-preview">
-            <p>${escapeHtml(description)}</p>
+            <p>${shortPreview}</p>
             ${j.description.length > 200 ? `<button class="read-more-btn">Read more...</button>` : ''}
           </div>
         ` : ''}
         
         ${j.description && j.description.length > 200 ? `
           <div class="job-description-full" style="display: none;">
-            <p>${escapeHtml(j.description)}</p>
+            ${fullDescription}
             <button class="read-less-btn">Read less</button>
           </div>
         ` : ''}
@@ -173,10 +176,78 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function formatDescription(text) {
+  if (!text) return '';
+  
+  // Split into paragraphs
+  let paragraphs = text.split(/\n\n+/);
+  let formatted = '';
+  
+  paragraphs.forEach(para => {
+    para = para.trim();
+    if (!para) return;
+    
+    // Check if it's a section header (common patterns)
+    const headerPatterns = [
+      /^(Responsibilities|Requirements|Qualifications|About|What you'll do|Your responsibilities|Your expertise|Skills|Benefits|What we offer|Key responsibilities|About the role|About you|Nice to have|Bonus points|Location|Salary|Compensation|The role|Your impact|What you bring|Who you are|Your mission|The team|About us|Company|Why join|Perks|Our culture)[:\s]/i,
+      /^(As a |In this role|The ideal candidate)/i
+    ];
+    
+    const isHeader = headerPatterns.some(pattern => pattern.test(para));
+    
+    if (isHeader) {
+      // Extract header text
+      let headerText = para.split(/[:]/)[0].trim();
+      let content = para.substring(headerText.length + 1).trim();
+      formatted += `<h4>${escapeHtml(headerText)}</h4>`;
+      if (content) {
+        formatted += formatBulletPoints(content);
+      }
+    } else {
+      // Regular paragraph - check if it contains bullet-like content
+      formatted += formatBulletPoints(para);
+    }
+  });
+  
+  return formatted || escapeHtml(text);
+}
+
+function formatBulletPoints(text) {
+  // Check for bullet point patterns
+  const bulletPatterns = [
+    /^[•\-\*]\s/gm,
+    /^[\d]+\.\s/gm,
+    /^\s*[•\-\*]\s/gm
+  ];
+  
+  const hasBullets = bulletPatterns.some(pattern => pattern.test(text));
+  
+  if (hasBullets) {
+    // Split by bullet points and create a list
+    const items = text.split(/(?:^|\n)\s*(?:[•\-\*]|\d+\.)\s+/).filter(item => item.trim());
+    if (items.length > 1) {
+      return '<ul>' + items.map(item => `<li>${escapeHtml(item.trim())}</li>`).join('') + '</ul>';
+    }
+  }
+  
+  // Check if text has sentence-ending patterns that suggest it should be a list
+  if (text.includes(';') || (text.match(/\.\s+[A-Z]/g) || []).length > 2) {
+    // Split by periods or semicolons and create bullet points
+    const sentences = text.split(/[.;]\s+/).filter(s => s.trim() && s.length > 20);
+    if (sentences.length > 2) {
+      return '<ul>' + sentences.map(sent => `<li>${escapeHtml(sent.trim())}</li>`).join('') + '</ul>';
+    }
+  }
+  
+  return `<p>${escapeHtml(text)}</p>`;
+}
+
 function applyFilters() {
   const q = document.getElementById("search").value.toLowerCase();
   const src = document.getElementById("source-filter").value;
   const sort = document.getElementById("sort-by").value;
+
+  console.log("Filtering - Source:", src, "Sort:", sort); // Debug log
 
   filteredJobs = allJobs.filter(j => {
     const matchText =
@@ -193,25 +264,42 @@ function applyFilters() {
   // Sort
   if (sort === "recent") {
     filteredJobs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  }
-  if (sort === "oldest") {
+  } else if (sort === "oldest") {
     filteredJobs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  }
-  if (sort === "title") {
+  } else if (sort === "title") {
     filteredJobs.sort((a, b) => a.title.localeCompare(b.title));
-  }
-  if (sort === "company") {
+  } else if (sort === "company") {
     filteredJobs.sort((a, b) => a.organization.localeCompare(b.organization));
   }
 
   renderJobs();
 }
 
-// Filters
+// Filters - prevent auto-reload from resetting filters
 document.getElementById("search").oninput = applyFilters;
-document.getElementById("source-filter").onchange = applyFilters;
-document.getElementById("sort-by").onchange = applyFilters;
+document.getElementById("source-filter").onchange = function(e) {
+  console.log("Source filter changed to:", e.target.value);
+  applyFilters();
+};
+document.getElementById("sort-by").onchange = function(e) {
+  console.log("Sort changed to:", e.target.value);
+  applyFilters();
+};
 
 // Initial sync
 loadJobs();
-setInterval(loadJobs, 30_000);
+
+// Auto-reload every 30 seconds, but preserve filter states
+setInterval(() => {
+  const currentSearch = document.getElementById("search").value;
+  const currentSource = document.getElementById("source-filter").value;
+  const currentSort = document.getElementById("sort-by").value;
+  
+  loadJobs().then(() => {
+    // Restore filter states after reload
+    document.getElementById("search").value = currentSearch;
+    document.getElementById("source-filter").value = currentSource;
+    document.getElementById("sort-by").value = currentSort;
+    applyFilters();
+  });
+}, 30_000);
