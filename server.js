@@ -12,40 +12,34 @@ const PORT = process.env.PORT || 8080;
 
 const JOB_FILE = path.join(__dirname, "jobs.json");
 
-// ======================================================================
-// SERVE PUBLIC
-// ======================================================================
 app.use(express.static(path.join(__dirname, "public")));
-console.log("[server] Serving public folder:", path.join(__dirname, "public"));
-console.log("[server] Jobs file location:", JOB_FILE);
+console.log("[server] Serving:", path.join(__dirname, "public"));
+console.log("[server] Job file:", JOB_FILE);
 
 // ======================================================================
-// BLOCKING SCRAPER – WAIT UNTIL COMPLETE
+// NON BLOCKING SCRAPER
 // ======================================================================
-function runScraperBlocking() {
-  return new Promise((resolve) => {
-    console.log("[server] Running scraper…");
+function runScraper() {
+  console.log("[server] Running scraper…");
 
-    const scraper = spawn("node", ["ash.js"], {
-      cwd: __dirname,
-    });
+  const scraper = spawn("node", ["ash.js"], {
+    cwd: __dirname
+  });
 
-    scraper.stdout.on("data", (d) => process.stdout.write("[scraper] " + d));
-    scraper.stderr.on("data", (d) => process.stderr.write("[scraper] " + d));
+  scraper.stdout.on("data", d => process.stdout.write("[scraper] " + d));
+  scraper.stderr.on("data", d => process.stderr.write("[scraper] " + d));
 
-    scraper.on("close", (code) => {
-      console.log(`[server] Scraper exited with code ${code}`);
-      resolve();
-    });
+  scraper.on("close", code => {
+    console.log("[server] Scraper finished with code", code);
   });
 }
 
 // ======================================================================
-// /jobs ENDPOINT — NOW SAFE
+// /jobs ENDPOINT
 // ======================================================================
 app.get("/jobs", (req, res) => {
   if (!fs.existsSync(JOB_FILE)) {
-    console.log("[server] jobs.json missing.");
+    console.log("[server] jobs.json missing");
     return res.json({ jobs: [], count: 0 });
   }
 
@@ -53,27 +47,20 @@ app.get("/jobs", (req, res) => {
     const jobs = JSON.parse(fs.readFileSync(JOB_FILE, "utf8"));
     return res.json({ jobs, count: jobs.length });
   } catch (err) {
-    console.error("[server] Failed reading jobs.json:", err);
+    console.error("[server] Error reading jobs.json:", err);
     return res.json({ jobs: [], count: 0 });
   }
 });
 
 // ======================================================================
-// STARTUP SEQUENCE — RUN SCRAPER FIRST
+// START SERVER IMMEDIATELY (no blocking)
 // ======================================================================
-async function start() {
-  console.log("[server] Starting…");
+app.listen(PORT, () => {
+  console.log("[server] Listening on port", PORT);
 
-  // Run scraper before allowing users to hit /jobs
-  await runScraperBlocking();
+  // run scraper AFTER server is up
+  runScraper();
+});
 
-  // Start server AFTER scraper finishes
-  app.listen(PORT, () => {
-    console.log(`[server] Listening on port ${PORT}`);
-  });
-
-  // Daily scrape
-  setInterval(runScraperBlocking, 24 * 60 * 60 * 1000);
-}
-
-start();
+// daily scrape
+setInterval(runScraper, 24 * 60 * 60 * 1000);
