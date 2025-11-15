@@ -22,7 +22,7 @@ console.log("[server] Job file:", JOB_FILE);
 function runScraper() {
   console.log("[server] Running scraper…");
 
-  const scraper = spawn("node", ["ash.js"], {
+  const scraper = spawn("node", ["scraper.js"], {
     cwd: __dirname
   });
 

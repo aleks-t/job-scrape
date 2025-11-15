@@ -219,6 +219,11 @@ select:focus {
   color: #e65100;
 }
 
+.job-source.workable {
+  background: #ede7f6;
+  color: #6c5ce7;
+}
+
 .job-meta {
   display: flex;
   flex-wrap: wrap;

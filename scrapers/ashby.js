@@ -1,0 +1,79 @@
+import { delay, stripHtml } from "../utils/helpers.js";
+
+// ================================
+// ASHBY SCRAPER
+// ================================
+
+export function extractAshbySlug(url) {
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes("jobs.ashbyhq.com")) return null;
+    return u.pathname.split("/").filter(Boolean)[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchAshbyJobs(org) {
+  try {
+    const res = await fetch(
+      `https://jobs.ashbyhq.com/${org}?embed=true&departments=&locations=&remote=&page=0`
+    );
+
+    if (!res.ok) return [];
+
+    const json = await res.json();
+    return json.jobs || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchAshbyDetail(org, jobId) {
+  try {
+    const res = await fetch(
+      `https://jobs.ashbyhq.com/${org}/embed/job/${jobId}`
+    );
+
+    if (!res.ok) {
+      console.error(`Ashby detail error ${res.status} for ${org}/${jobId}`);
+      return null;
+    }
+
+    const json = await res.json();
+    return json.job || null;
+  } catch (err) {
+    console.error(`Ashby detail exception for ${org}/${jobId}:`, err.message);
+    return null;
+  }
+}
+
+export async function scrapeAshby(orgs, all) {
+  for (const org of orgs) {
+    console.log("[scraper] Fetching Ashby jobs:", org);
+    await delay(1000);
+    
+    const list = await fetchAshbyJobs(org);
+
+    for (const j of list) {
+      await delay(800);
+      
+      const detail = await fetchAshbyDetail(org, j.id);
+
+      all.push({
+        source: "ashby",
+        organization: org,
+        id: j.id,
+        title: detail?.title || j.title,
+        locationName: detail?.locationName || j.locationName,
+        workplaceType: detail?.workplaceType || j.workplaceType,
+        employmentType: detail?.employmentType || j.employmentType,
+        compensation: detail?.compensationTierSummary || j.compensationTierSummary || "",
+        description: detail?.descriptionHtml ? stripHtml(detail.descriptionHtml) : "",
+        url: `https://jobs.ashbyhq.com/${org}/${j.id}`,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+}
+

@@ -1,6 +1,6 @@
 # Job Scraper Dashboard
 
-A beautiful web dashboard that automatically scrapes job postings from Ashby and Greenhouse job boards daily, grouped by company with expandable descriptions.
+A beautiful web dashboard that automatically scrapes job postings from Ashby, Greenhouse, Lever, and Workable job boards daily.
 
 ## Features
 
@@ -58,9 +58,9 @@ npm start
 ## Configuration
 
 - **Scrape Schedule**: Edit the interval in `server.js` (default: 24 hours)
-- **Days to Scrape**: Default is 3 days, can be changed in `ash.js`
+- **Days to Scrape**: Default is 3 days, can be changed via `DAYS_BACK` env var
 - **Port**: Set `PORT` environment variable (default: 8080)
-- **Rate Limiting**: 300ms delay between Ashby requests, 500ms between orgs
+- **Rate Limiting**: 800ms between job details, 1000ms between organizations
 
 ## API Endpoints
 
@@ -80,9 +80,14 @@ Examples:
 
 ## UI Features
 
-- **Company Grouping**: Jobs are grouped by company and sorted by job count
-- **Expandable Sections**: Click company header to expand/collapse all jobs
-- **Read More**: Long descriptions have "Read more" buttons to expand
-- **Live Updates**: Dashboard auto-refreshes every 30 seconds
-- **No Pagination**: All results shown, grouped for easy browsing
+- **Flat List View**: Jobs displayed in a clean, scannable list
+- **Expandable Descriptions**: Long descriptions have "Read more" buttons to expand
+- **Hide Companies**: Hide companies with too many jobs (persists across sessions)
+- **Pagination**: 50 jobs per page for fast loading
+- **Live Updates**: Dashboard auto-refreshes every 2 minutes
+- **Smart Filters**: Search, filter by source (Ashby/Greenhouse/Lever/Workable), and sort
+
+## Project Structure
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for details on the modular structure and how to add new job boards.
 
