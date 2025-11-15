@@ -4,7 +4,7 @@
 import fetch from "node-fetch";
 import fs from "fs";
 import { decode } from "html-entities";
-import cheerio from "cheerio";
+import * as cheerio from "cheerio";
 
 // ================================
 // ENV VARIABLES
