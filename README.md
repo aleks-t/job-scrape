@@ -43,15 +43,17 @@ npm start
 
 4. Add environment variables in Railway:
    - `SERP_API_KEY` - Your SerpAPI key
-   - `WEBSHARE_API_KEY` - Your Webshare proxy key
+   - `WEBSHARE_API_KEY` - Your Webshare proxy key (optional)
    - `PORT` - Set to 8080 (or Railway will auto-detect)
 
 5. Railway will automatically:
-   - Detect Node.js
+   - Detect Node.js 18+
    - Install dependencies
    - Run `npm start`
 
 6. Your dashboard will be live!
+
+**Note:** This app requires Node.js 18 or higher (uses native fetch API).
 
 ## Configuration
 

@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node server.js",
     "scrape": "node ash.js"
@@ -10,8 +13,6 @@
   "dependencies": {
     "cheerio": "^1.0.0-rc.12",
     "express": "^4.21.1",
-    "html-entities": "^2.3.3",
-    "https-proxy-agent": "^7.0.2",
-    "node-fetch": "^3.3.2"
+    "html-entities": "^2.3.3"
   }
 }

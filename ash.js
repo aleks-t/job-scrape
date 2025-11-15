@@ -1,10 +1,10 @@
 // ================================
 // IMPORTS
 // ================================
-import fetch from "node-fetch";
 import fs from "fs";
 import { decode } from "html-entities";
 import * as cheerio from "cheerio";
+// Node.js 18+ has native fetch, no need to import
 
 // ================================
 // ENV VARIABLES
