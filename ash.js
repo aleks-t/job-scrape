@@ -4,6 +4,7 @@
 import fetch from "node-fetch";
 import fs from "fs";
 import { decode } from "html-entities";
+import cheerio from "cheerio";
 
 // ================================
 // ENV VARIABLES
@@ -59,6 +60,16 @@ function extractGreenhouseSlug(url) {
   try {
     const u = new URL(url);
     if (!u.hostname.includes("boards.greenhouse.io")) return null;
+    return u.pathname.split("/").filter(Boolean)[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+function extractLeverSlug(url) {
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes("jobs.lever.co")) return null;
     return u.pathname.split("/").filter(Boolean)[0] || null;
   } catch {
     return null;
@@ -214,6 +225,79 @@ async function fetchGreenhouseJobs(org) {
 }
 
 // ================================
+// LEVER FETCHERS
+// ================================
+async function fetchLeverJobs(org) {
+  const url = `https://jobs.lever.co/${org}`;
+  console.log(`[scraper] Lever list: ${url}`);
+  
+  try {
+    const res = await fetch(url);
+    
+    if (!res.ok) {
+      console.error(`[scraper] Lever list error ${res.status} for ${org}`);
+      return [];
+    }
+    
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    
+    const jobs = [];
+    
+    $(".posting").each((_, el) => {
+      const id = $(el).attr("data-qa-posting-id") || "";
+      const title = $(el).find('h5[data-qa="posting-name"]').text().trim();
+      const href = $(el).find("a.posting-title").attr("href") || "";
+      const url = href.startsWith("http") ? href : `https://jobs.lever.co/${org}/${id}`;
+      
+      const categories = $(el)
+        .find(".posting-categories span")
+        .map((_, s) => $(s).text().trim())
+        .get();
+      
+      jobs.push({
+        id,
+        title,
+        categories: categories.join(", "),
+        url
+      });
+    });
+    
+    return jobs;
+  } catch (err) {
+    console.error(`[scraper] Lever list fail for ${org}:`, err.message);
+    return [];
+  }
+}
+
+async function fetchLeverDetail(jobUrl) {
+  try {
+    const res = await fetch(jobUrl);
+    
+    if (!res.ok) {
+      console.error(`[scraper] Lever detail error ${res.status}`);
+      return { description: "", location: "" };
+    }
+    
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    
+    const description = $('[data-qa="job-description"]')
+      .text()
+      .replace(/\s+/g, " ")
+      .trim();
+    
+    // Try to extract location
+    const location = $(".posting-categories .location").text().trim() || "";
+    
+    return { description, location };
+  } catch (err) {
+    console.error(`[scraper] Lever detail fail:`, err.message);
+    return { description: "", location: "" };
+  }
+}
+
+// ================================
 // MAIN
 // ================================
 async function main() {
@@ -222,12 +306,15 @@ async function main() {
   // Discover orgs
   const ashbyLinks = await serpSearch("jobs.ashbyhq.com", ARG_SEARCH, ARG_DAYS);
   const greenhouseLinks = await serpSearch("boards.greenhouse.io", ARG_SEARCH, ARG_DAYS);
+  const leverLinks = await serpSearch("jobs.lever.co", ARG_SEARCH, ARG_DAYS);
 
   const ashbyOrgs = [...new Set(ashbyLinks.map(extractAshbySlug).filter(Boolean))];
   const greenhouseOrgs = [...new Set(greenhouseLinks.map(extractGreenhouseSlug).filter(Boolean))];
+  const leverOrgs = [...new Set(leverLinks.map(extractLeverSlug).filter(Boolean))];
 
   console.log("[scraper] Ashby orgs:", ashbyOrgs.length);
   console.log("[scraper] Greenhouse orgs:", greenhouseOrgs.length);
+  console.log("[scraper] Lever orgs:", leverOrgs.length);
 
   const all = [];
 
@@ -287,6 +374,39 @@ async function main() {
         compensation: "",
         description: stripHtml(j.content),
         url: j.absolute_url,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  // =======================
+  // LEVER
+  // =======================
+  for (const org of leverOrgs) {
+    console.log("[scraper] Fetching Lever jobs:", org);
+
+    // Add delay between organizations to avoid rate limiting
+    await delay(1000);
+    
+    const jobs = await fetchLeverJobs(org);
+
+    for (const j of jobs) {
+      // Add delay between detail requests
+      await delay(800);
+      
+      const detail = await fetchLeverDetail(j.url);
+      
+      all.push({
+        source: "lever",
+        organization: org,
+        id: j.id,
+        title: j.title,
+        locationName: detail.location || "",
+        workplaceType: "",
+        employmentType: "",
+        compensation: "",
+        description: detail.description,
+        url: j.url,
         timestamp: new Date().toISOString()
       });
     }

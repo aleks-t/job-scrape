@@ -120,109 +120,17 @@ select:focus {
 }
 
 .jobs-grid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 16px;
   margin-bottom: 30px;
 }
 
-/* Company Group Styles */
-.company-group {
-  background: white;
-  border-radius: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  overflow: hidden;
-  transition: all 0.2s;
-}
-
-.company-group:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-}
-
-.company-header {
-  padding: 24px 28px;
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: background 0.2s;
-  border-bottom: 1px solid #f5f5f7;
-}
-
-.company-header:hover {
-  background: #fafafa;
-}
-
-.company-name {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: #1d1d1f;
-}
-
-.company-icon {
-  font-size: 1.3rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: #007aff;
-  color: white;
-  flex-shrink: 0;
-}
-
-.job-count-badge {
-  background: #f5f5f7;
-  color: #86868b;
-  padding: 6px 14px;
-  border-radius: 12px;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.toggle-btn {
-  background: #f5f5f7;
-  border: none;
-  color: #86868b;
-  font-size: 1.1rem;
-  padding: 10px 14px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-weight: 600;
-}
-
-.toggle-btn:hover {
-  background: #e5e5e7;
-}
-
-.jobs-list {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.3s ease-out;
-}
-
-.jobs-list.expanded {
-  max-height: 50000px;
-  padding: 16px 24px 24px 24px;
-}
-
 .job-card {
-  background: #fafafa;
-  border: 1.5px solid #f0f0f0;
+  background: white;
+  border: 1.5px solid #e5e5e7;
   border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 12px;
+  padding: 28px;
   transition: all 0.2s;
-}
-
-.job-card:last-child {
-  margin-bottom: 0;
 }
 
 .job-card:hover {
@@ -237,14 +145,25 @@ select:focus {
   justify-content: space-between;
   align-items: start;
   gap: 16px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
+}
+
+.job-title-section {
+  flex: 1;
 }
 
 .job-title {
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 700;
-  margin: 0;
-  line-height: 1.4;
+  margin: 0 0 8px 0;
+  line-height: 1.3;
+}
+
+.job-company {
+  font-size: 1rem;
+  color: #007aff;
+  font-weight: 600;
+  margin-bottom: 0;
 }
 
 .job-title a {
@@ -274,6 +193,11 @@ select:focus {
 .job-source.greenhouse {
   background: #e8f5e9;
   color: #388e3c;
+}
+
+.job-source.lever {
+  background: #fff3e0;
+  color: #e65100;
 }
 
 .job-meta {
@@ -418,18 +342,12 @@ select:focus {
     width: 100%;
   }
 
-  .company-name {
-    font-size: 1.1rem;
-  }
-
-  .company-icon {
-    width: 36px;
-    height: 36px;
-    font-size: 1.3rem;
-  }
-
   .job-header {
     flex-direction: column;
+  }
+  
+  .job-card {
+    padding: 20px;
   }
 
   .job-meta {

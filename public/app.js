@@ -36,136 +36,82 @@ function renderJobs() {
 
   noResults.style.display = "none";
 
-  // Group jobs by company
-  const grouped = {};
+  // Simple flat list - no grouping
   filteredJobs.forEach(j => {
-    if (!grouped[j.organization]) {
-      grouped[j.organization] = [];
-    }
-    grouped[j.organization].push(j);
-  });
-
-  // Sort companies by number of jobs (descending)
-  const companies = Object.keys(grouped).sort((a, b) => 
-    grouped[b].length - grouped[a].length
-  );
-
-  // Render each company group
-  companies.forEach(company => {
-    const jobs = grouped[company];
-    const companyDiv = document.createElement("div");
-    companyDiv.className = "company-group";
-
-    const companyHeader = document.createElement("div");
-    companyHeader.className = "company-header";
+    const jobCard = document.createElement("div");
+    jobCard.className = "job-card";
     
-    // Get company initial for icon
-    const initial = company.charAt(0).toUpperCase();
-    
-    companyHeader.innerHTML = `
-      <div class="company-name">
-        <div class="company-icon">${initial}</div>
-        <span class="name">${escapeHtml(company)}</span>
-        <span class="job-count-badge">${jobs.length} job${jobs.length > 1 ? 's' : ''}</span>
+    const compensation = j.compensation ? `
+      <div class="job-compensation">
+        💰 ${escapeHtml(j.compensation)}
       </div>
-      <button class="toggle-btn">▼</button>
-    `;
+    ` : '';
 
-    const jobsList = document.createElement("div");
-    jobsList.className = "jobs-list expanded";
+    // Format the description into organized sections
+    const fullDescription = j.description ? formatDescription(j.description) : '';
+    const shortPreview = j.description ? 
+      escapeHtml(j.description.substring(0, 200)) + (j.description.length > 200 ? '...' : '') : 
+      '';
 
-    jobs.forEach(j => {
-      const jobCard = document.createElement("div");
-      jobCard.className = "job-card";
-      
-      const compensation = j.compensation ? `
-        <div class="job-compensation">
-          💰 ${escapeHtml(j.compensation)}
-        </div>
-      ` : '';
-
-      // Format the description into organized sections
-      const fullDescription = j.description ? formatDescription(j.description) : '';
-      const shortPreview = j.description ? 
-        escapeHtml(j.description.substring(0, 200)) + (j.description.length > 200 ? '...' : '') : 
-        '';
-
-      jobCard.innerHTML = `
-        <div class="job-header">
+    jobCard.innerHTML = `
+      <div class="job-header">
+        <div class="job-title-section">
           <h3 class="job-title">
             <a href="${escapeHtml(j.url)}" target="_blank">${escapeHtml(j.title)}</a>
           </h3>
-          <span class="job-source ${j.source}">${j.source}</span>
+          <div class="job-company">${escapeHtml(j.organization)}</div>
         </div>
-        
-        <div class="job-meta">
-          ${j.locationName ? `<span>📍 ${escapeHtml(j.locationName)}</span>` : ''}
-          ${j.workplaceType ? `<span>💼 ${escapeHtml(j.workplaceType)}</span>` : ''}
-          ${j.employmentType ? `<span>⏰ ${escapeHtml(j.employmentType)}</span>` : ''}
-        </div>
-        
-        ${compensation}
-        
-        ${shortPreview ? `
-          <div class="job-description-preview">
-            <p>${shortPreview}</p>
-            ${j.description.length > 200 ? `<button class="read-more-btn">Read more...</button>` : ''}
-          </div>
-        ` : ''}
-        
-        ${j.description && j.description.length > 200 ? `
-          <div class="job-description-full" style="display: none;">
-            ${fullDescription}
-            <button class="read-less-btn">Read less</button>
-          </div>
-        ` : ''}
-        
-        <div class="job-actions">
-          <a href="${escapeHtml(j.url)}" target="_blank" class="btn-apply">Apply Now →</a>
-        </div>
-      `;
-
-      // Add read more/less functionality
-      const readMoreBtn = jobCard.querySelector('.read-more-btn');
-      const readLessBtn = jobCard.querySelector('.read-less-btn');
-      const preview = jobCard.querySelector('.job-description-preview');
-      const full = jobCard.querySelector('.job-description-full');
-
-      if (readMoreBtn) {
-        readMoreBtn.onclick = () => {
-          preview.style.display = 'none';
-          full.style.display = 'block';
-        };
-      }
-
-      if (readLessBtn) {
-        readLessBtn.onclick = () => {
-          preview.style.display = 'block';
-          full.style.display = 'none';
-        };
-      }
-
-      jobsList.appendChild(jobCard);
-    });
-
-    companyDiv.appendChild(companyHeader);
-    companyDiv.appendChild(jobsList);
-
-    // Toggle company group
-    companyHeader.onclick = () => {
-      const isExpanded = jobsList.classList.contains('expanded');
-      const toggleBtn = companyHeader.querySelector('.toggle-btn');
+        <span class="job-source ${j.source}">${j.source}</span>
+      </div>
       
-      if (isExpanded) {
-        jobsList.classList.remove('expanded');
-        toggleBtn.textContent = '▶';
-      } else {
-        jobsList.classList.add('expanded');
-        toggleBtn.textContent = '▼';
-      }
-    };
+      <div class="job-meta">
+        ${j.locationName ? `<span>📍 ${escapeHtml(j.locationName)}</span>` : ''}
+        ${j.workplaceType ? `<span>💼 ${escapeHtml(j.workplaceType)}</span>` : ''}
+        ${j.employmentType ? `<span>⏰ ${escapeHtml(j.employmentType)}</span>` : ''}
+      </div>
+      
+      ${compensation}
+      
+      ${shortPreview ? `
+        <div class="job-description-preview">
+          <p>${shortPreview}</p>
+          ${j.description.length > 200 ? `<button class="read-more-btn">Read more...</button>` : ''}
+        </div>
+      ` : ''}
+      
+      ${j.description && j.description.length > 200 ? `
+        <div class="job-description-full" style="display: none;">
+          ${fullDescription}
+          <button class="read-less-btn">Read less</button>
+        </div>
+      ` : ''}
+      
+      <div class="job-actions">
+        <a href="${escapeHtml(j.url)}" target="_blank" class="btn-apply">Apply Now →</a>
+      </div>
+    `;
 
-    jobsContainer.appendChild(companyDiv);
+    // Add read more/less functionality
+    const readMoreBtn = jobCard.querySelector('.read-more-btn');
+    const readLessBtn = jobCard.querySelector('.read-less-btn');
+    const preview = jobCard.querySelector('.job-description-preview');
+    const full = jobCard.querySelector('.job-description-full');
+
+    if (readMoreBtn) {
+      readMoreBtn.onclick = () => {
+        preview.style.display = 'none';
+        full.style.display = 'block';
+      };
+    }
+
+    if (readLessBtn) {
+      readLessBtn.onclick = () => {
+        preview.style.display = 'block';
+        full.style.display = 'none';
+      };
+    }
+
+    jobsContainer.appendChild(jobCard);
   });
 }
 
