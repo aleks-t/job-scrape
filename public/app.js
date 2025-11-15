@@ -1,7 +1,7 @@
 let allJobs = [];
 let filteredJobs = [];
-let groupedByCompany = {};
-const pageSize = 20;
+let page = 1;
+const pageSize = 50; // Show 50 jobs per page for better performance
 
 const jobsContainer = document.getElementById("jobs-container");
 const loading = document.getElementById("loading");
@@ -31,13 +31,22 @@ function renderJobs() {
 
   if (filteredJobs.length === 0) {
     noResults.style.display = "block";
+    document.getElementById("pagination").style.display = "none";
     return;
   }
 
   noResults.style.display = "none";
 
-  // Simple flat list - no grouping
-  filteredJobs.forEach(j => {
+  // Pagination - only render current page
+  const startIdx = (page - 1) * pageSize;
+  const endIdx = startIdx + pageSize;
+  const pageJobs = filteredJobs.slice(startIdx, endIdx);
+
+  // Update pagination display
+  updatePagination();
+
+  // Only render jobs for current page
+  pageJobs.forEach(j => {
     const jobCard = document.createElement("div");
     jobCard.className = "job-card";
     
@@ -218,8 +227,45 @@ function applyFilters() {
     filteredJobs.sort((a, b) => a.organization.localeCompare(b.organization));
   }
 
+  page = 1; // Reset to first page when filtering
   renderJobs();
 }
+
+function updatePagination() {
+  const totalPages = Math.ceil(filteredJobs.length / pageSize);
+  const pagination = document.getElementById("pagination");
+  
+  if (totalPages <= 1) {
+    pagination.style.display = "none";
+    return;
+  }
+  
+  pagination.style.display = "flex";
+  
+  document.getElementById("page-info").textContent = 
+    `Page ${page} of ${totalPages} (${filteredJobs.length} jobs)`;
+  
+  document.getElementById("prev-page").disabled = page === 1;
+  document.getElementById("next-page").disabled = page >= totalPages;
+}
+
+// Pagination controls
+document.getElementById("prev-page").onclick = () => {
+  if (page > 1) {
+    page--;
+    renderJobs();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
+
+document.getElementById("next-page").onclick = () => {
+  const totalPages = Math.ceil(filteredJobs.length / pageSize);
+  if (page < totalPages) {
+    page++;
+    renderJobs();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
 
 // Filters - prevent auto-reload from resetting filters
 document.getElementById("search").oninput = applyFilters;
@@ -235,17 +281,19 @@ document.getElementById("sort-by").onchange = function(e) {
 // Initial sync
 loadJobs();
 
-// Auto-reload every 30 seconds, but preserve filter states
+// Auto-reload every 2 minutes instead of 30 seconds to reduce lag
 setInterval(() => {
   const currentSearch = document.getElementById("search").value;
   const currentSource = document.getElementById("source-filter").value;
   const currentSort = document.getElementById("sort-by").value;
+  const currentPage = page;
   
   loadJobs().then(() => {
     // Restore filter states after reload
     document.getElementById("search").value = currentSearch;
     document.getElementById("source-filter").value = currentSource;
     document.getElementById("sort-by").value = currentSort;
+    page = currentPage;
     applyFilters();
   });
-}, 30_000);
+}, 120_000); // 2 minutes
