@@ -2,6 +2,7 @@ let allJobs = [];
 let filteredJobs = [];
 let page = 1;
 const pageSize = 50; // Show 50 jobs per page for better performance
+let hiddenCompanies = JSON.parse(localStorage.getItem('hiddenCompanies') || '[]');
 
 const jobsContainer = document.getElementById("jobs-container");
 const loading = document.getElementById("loading");
@@ -96,6 +97,7 @@ function renderJobs() {
       ` : ''}
       
       <div class="job-actions">
+        <button class="btn-hide" data-company="${escapeHtml(j.organization)}">Hide ${escapeHtml(j.organization)}</button>
         <a href="${escapeHtml(j.url)}" target="_blank" class="btn-apply">Apply Now →</a>
       </div>
     `;
@@ -120,8 +122,17 @@ function renderJobs() {
       };
     }
 
+    // Add hide company functionality
+    const hideBtn = jobCard.querySelector('.btn-hide');
+    hideBtn.onclick = () => {
+      hideCompany(j.organization);
+    };
+
     jobsContainer.appendChild(jobCard);
   });
+  
+  // Update hidden companies badge
+  updateHiddenBadge();
 }
 
 function escapeHtml(text) {
@@ -205,6 +216,11 @@ function applyFilters() {
   console.log("Filtering - Source:", src, "Sort:", sort); // Debug log
 
   filteredJobs = allJobs.filter(j => {
+    // Filter out hidden companies
+    if (hiddenCompanies.includes(j.organization)) {
+      return false;
+    }
+    
     const matchText =
       j.title.toLowerCase().includes(q) ||
       j.organization.toLowerCase().includes(q) ||
@@ -277,6 +293,149 @@ document.getElementById("sort-by").onchange = function(e) {
   console.log("Sort changed to:", e.target.value);
   applyFilters();
 };
+
+// Hide/unhide company functions
+function hideCompany(company) {
+  if (!hiddenCompanies.includes(company)) {
+    hiddenCompanies.push(company);
+    localStorage.setItem('hiddenCompanies', JSON.stringify(hiddenCompanies));
+    
+    // Show undo toast
+    showToast(`Hidden all jobs from ${company}`, () => {
+      unhideCompany(company);
+    });
+    
+    applyFilters();
+  }
+}
+
+function unhideCompany(company) {
+  hiddenCompanies = hiddenCompanies.filter(c => c !== company);
+  localStorage.setItem('hiddenCompanies', JSON.stringify(hiddenCompanies));
+  applyFilters();
+}
+
+function showToast(message, undoCallback) {
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerHTML = `
+    <span>${escapeHtml(message)}</span>
+    <button class="toast-undo">Undo</button>
+    <button class="toast-close">×</button>
+  `;
+  
+  document.body.appendChild(toast);
+  
+  // Fade in
+  setTimeout(() => toast.classList.add('show'), 10);
+  
+  // Undo button
+  toast.querySelector('.toast-undo').onclick = () => {
+    undoCallback();
+    toast.remove();
+  };
+  
+  // Close button
+  toast.querySelector('.toast-close').onclick = () => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  };
+  
+  // Auto-dismiss after 5 seconds
+  setTimeout(() => {
+    if (document.body.contains(toast)) {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 300);
+    }
+  }, 5000);
+}
+
+function updateHiddenBadge() {
+  let badge = document.getElementById('hidden-badge');
+  
+  if (hiddenCompanies.length > 0) {
+    if (!badge) {
+      badge = document.createElement('button');
+      badge.id = 'hidden-badge';
+      badge.className = 'hidden-badge';
+      badge.onclick = showHiddenCompanies;
+      document.querySelector('.stats').appendChild(badge);
+    }
+    badge.textContent = `${hiddenCompanies.length} hidden`;
+    badge.style.display = 'inline-block';
+  } else if (badge) {
+    badge.style.display = 'none';
+  }
+}
+
+function showHiddenCompanies() {
+  if (hiddenCompanies.length === 0) return;
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Hidden Companies (${hiddenCompanies.length})</h2>
+        <button class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        ${hiddenCompanies.map(company => `
+          <div class="hidden-company-item">
+            <span>${escapeHtml(company)}</span>
+            <button class="btn-unhide" data-company="${escapeHtml(company)}">Unhide</button>
+          </div>
+        `).join('')}
+      </div>
+      <div class="modal-footer">
+        <button class="btn-clear-all">Clear All</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  setTimeout(() => modal.classList.add('show'), 10);
+  
+  // Close button
+  modal.querySelector('.modal-close').onclick = () => {
+    modal.classList.remove('show');
+    setTimeout(() => modal.remove(), 300);
+  };
+  
+  // Click outside to close
+  modal.onclick = (e) => {
+    if (e.target === modal) {
+      modal.classList.remove('show');
+      setTimeout(() => modal.remove(), 300);
+    }
+  };
+  
+  // Unhide buttons
+  modal.querySelectorAll('.btn-unhide').forEach(btn => {
+    btn.onclick = () => {
+      const company = btn.dataset.company;
+      unhideCompany(company);
+      btn.closest('.hidden-company-item').remove();
+      
+      if (hiddenCompanies.length === 0) {
+        modal.classList.remove('show');
+        setTimeout(() => modal.remove(), 300);
+      } else {
+        modal.querySelector('.modal-header h2').textContent = 
+          `Hidden Companies (${hiddenCompanies.length})`;
+      }
+    };
+  });
+  
+  // Clear all button
+  modal.querySelector('.btn-clear-all').onclick = () => {
+    hiddenCompanies = [];
+    localStorage.removeItem('hiddenCompanies');
+    applyFilters();
+    modal.classList.remove('show');
+    setTimeout(() => modal.remove(), 300);
+  };
+}
 
 // Initial sync
 loadJobs();
