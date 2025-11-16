@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from "express";
 import { spawn } from "child_process";
 import path from "path";

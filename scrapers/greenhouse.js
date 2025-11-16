@@ -31,27 +31,39 @@ export async function fetchGreenhouseJobs(org) {
 }
 
 export async function scrapeGreenhouse(orgs, all) {
-  for (const org of orgs) {
-    console.log("[scraper] Fetching Greenhouse jobs:", org);
-    await delay(1000);
-    
-    const jobs = await fetchGreenhouseJobs(org);
-      
-    for (const j of jobs) {
-      all.push({
-        source: "greenhouse",
-        organization: org,
-        id: j.id,
-        title: j.title,
-        locationName: j.location?.name || "",
-        workplaceType: "",
-        employmentType: "",
-        compensation: "",
-        description: stripHtml(j.content || ""),
-        url: j.absolute_url,
-        timestamp: new Date().toISOString()
-      });
+  console.log(`[greenhouse] Scraping ${orgs.length} orgs concurrently...`);
+  
+  const results = await Promise.allSettled(
+    orgs.map(async (org) => {
+      try {
+        const jobs = await fetchGreenhouseJobs(org);
+        
+        return jobs.map(j => ({
+          source: "greenhouse",
+          organization: org,
+          id: j.id,
+          title: j.title,
+          locationName: j.location?.name || "",
+          workplaceType: "",
+          employmentType: "",
+          compensation: "",
+          description: stripHtml(j.content || ""),
+          url: j.absolute_url,
+          timestamp: new Date().toISOString()
+        }));
+      } catch (err) {
+        console.error(`[greenhouse] Error with ${org}:`, err.message);
+        return [];
+      }
+    })
+  );
+  
+  results.forEach(result => {
+    if (result.status === 'fulfilled') {
+      all.push(...result.value);
     }
-  }
+  });
+  
+  console.log(`[greenhouse] Scraped ${all.filter(j => j.source === 'greenhouse').length} jobs`);
 }
 

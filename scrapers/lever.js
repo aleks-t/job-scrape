@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
 import { decode } from "html-entities";
-import { delay, stripHtml } from "../utils/helpers.js";
+import { delay, stripHtml, batchProcess } from "../utils/helpers.js";
 
 // ================================
 // LEVER SCRAPER
@@ -92,31 +92,47 @@ export async function fetchLeverDetail(jobUrl) {
 }
 
 export async function scrapeLever(orgs, all) {
-  for (const org of orgs) {
-    console.log("[scraper] Fetching Lever jobs:", org);
-    await delay(1000);
-    
-    const jobs = await fetchLeverJobs(org);
-
-    for (const j of jobs) {
-      await delay(800);
+  console.log(`[lever] Scraping ${orgs.length} orgs in batches of 5...`);
+  
+  const results = await batchProcess(orgs, 5, async (org) => {
+    try {
+      const jobs = await fetchLeverJobs(org);
+      console.log(`[lever] ${org}: ${jobs.length} jobs`);
+      const jobsWithDetails = [];
       
-      const detail = await fetchLeverDetail(j.url);
+      // Process ALL jobs (no limit)
+      for (const j of jobs) {
+        await delay(50); // Small delay between job details
+        const detail = await fetchLeverDetail(j.url);
+        
+        jobsWithDetails.push({
+          source: "lever",
+          organization: org,
+          id: j.id,
+          title: j.title,
+          locationName: detail.location || "",
+          workplaceType: "",
+          employmentType: "",
+          compensation: "",
+          description: detail.description,
+          url: j.url,
+          timestamp: new Date().toISOString()
+        });
+      }
       
-      all.push({
-        source: "lever",
-        organization: org,
-        id: j.id,
-        title: j.title,
-        locationName: detail.location || "",
-        workplaceType: "",
-        employmentType: "",
-        compensation: "",
-        description: detail.description,
-        url: j.url,
-        timestamp: new Date().toISOString()
-      });
+      return jobsWithDetails;
+    } catch (err) {
+      console.error(`[lever] Error with ${org}:`, err.message);
+      return [];
     }
-  }
+  });
+  
+  results.forEach(result => {
+    if (result.status === 'fulfilled') {
+      all.push(...result.value);
+    }
+  });
+  
+  console.log(`[lever] Scraped ${all.filter(j => j.source === 'lever').length} jobs`);
 }
 

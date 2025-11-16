@@ -15,23 +15,27 @@ A beautiful web dashboard that automatically scrapes job postings from Ashby, Gr
 
 ## Local Development
 
-1. Set environment variables:
+1. Copy the environment file:
 ```bash
-export SERP_API_KEY="your_serpapi_key"
-export WEBSHARE_API_KEY="your_webshare_key"
+cp .env.example .env
 ```
 
-2. Install dependencies:
+2. Edit `.env` and add your SERP API key:
+```bash
+SERP_API_KEY=your_serpapi_key_here
+```
+
+3. Install dependencies:
 ```bash
 npm install
 ```
 
-3. Start the server:
+4. Start the server:
 ```bash
 npm start
 ```
 
-4. Open your browser to `http://localhost:8080`
+5. Open your browser to `http://localhost:8080`
 
 ## Deploy to Railway
 
@@ -42,9 +46,10 @@ npm start
 3. Connect your GitHub repository
 
 4. Add environment variables in Railway:
-   - `SERP_API_KEY` - Your SerpAPI key
-   - `WEBSHARE_API_KEY` - Your Webshare proxy key (optional)
-   - `PORT` - Set to 8080 (or Railway will auto-detect)
+   - `SERP_API_KEY` - Your SerpAPI key (required)
+   - `SERP_PAGES` - Number of pages to fetch: 1-3 (optional, default: 2)
+   - `DAYS_BACK` - Days to look back: 1-7 (optional, default: 3)
+   - `PORT` - Port number (optional, Railway auto-detects)
 
 5. Railway will automatically:
    - Detect Node.js 18+
@@ -57,10 +62,29 @@ npm start
 
 ## Configuration
 
-- **Scrape Schedule**: Edit the interval in `server.js` (default: 24 hours)
-- **Days to Scrape**: Default is 3 days, can be changed via `DAYS_BACK` env var
-- **Port**: Set `PORT` environment variable (default: 8080)
-- **Rate Limiting**: 800ms between job details, 1000ms between organizations
+All configuration is done via environment variables (see `.env.example`):
+
+- **SERP_API_KEY**: Your SerpAPI key (required) - Get from https://serpapi.com/
+- **SERP_PAGES**: Number of SERP pages to fetch (1-3, default: 2)
+  - More pages = more companies discovered
+  - 1 page = ~100 SERP results per board
+  - 2 pages = ~200 SERP results per board
+  - 3 pages = ~300 SERP results per board
+- **DAYS_BACK**: How many days back to search (1-7, default: 3)
+  - Controls SERP discovery timeframe
+  - Scraper fetches ALL jobs from discovered companies (no limit)
+- **SEARCH_QUERY**: Optional keyword filter (leave empty for all jobs)
+- **PORT**: Web server port (default: 8080)
+
+### Rate Limiting
+- 800ms between job details
+- 1000ms between organizations
+- 500ms between SERP pages
+
+### Scrape Schedule
+- Runs once on startup
+- Runs every 24 hours automatically
+- Edit interval in `server.js` if needed
 
 ## API Endpoints
 

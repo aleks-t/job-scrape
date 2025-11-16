@@ -1,4 +1,4 @@
-import { delay, stripHtml } from "../utils/helpers.js";
+import { delay, stripHtml, batchProcess } from "../utils/helpers.js";
 
 // ================================
 // WORKABLE SCRAPER
@@ -69,37 +69,54 @@ export async function fetchWorkableDetail(account, shortcode) {
 }
 
 export async function scrapeWorkable(accounts, all) {
-  for (const account of accounts) {
-    console.log("[scraper] Fetching Workable jobs:", account);
-    await delay(1000);
-    
-    const jobList = await fetchWorkableJobs(account);
-    console.log(`[scraper] -> ${jobList.length} jobs from ${account}`);
+  console.log(`[workable] Scraping ${accounts.length} accounts in batches of 5...`);
+  
+  const results = await batchProcess(accounts, 5, async (account) => {
+      try {
+        const jobList = await fetchWorkableJobs(account);
+        console.log(`[workable] ${account}: ${jobList.length} jobs`);
+        const jobs = [];
+        
+        // Process ALL jobs (no limit)
+        for (const job of jobList) {
+          await delay(100); // Small delay between job details
+          const detail = await fetchWorkableDetail(account, job.shortcode);
+          if (!detail) continue;
 
-    for (const job of jobList) {
-      await delay(800);
-      
-      const detail = await fetchWorkableDetail(account, job.shortcode);
-      if (!detail) continue;
+          const location = job.locations && job.locations[0] 
+            ? `${job.locations[0].city || ''}, ${job.locations[0].region || ''}`.trim().replace(/^,\s*|,\s*$/g, '')
+            : (job.location ? `${job.location.city || ''}, ${job.location.region || ''}`.trim().replace(/^,\s*|,\s*$/g, '') : '');
 
-      const location = job.locations && job.locations[0] 
-        ? `${job.locations[0].city || ''}, ${job.locations[0].region || ''}`.trim().replace(/^,\s*|,\s*$/g, '')
-        : (job.location ? `${job.location.city || ''}, ${job.location.region || ''}`.trim().replace(/^,\s*|,\s*$/g, '') : '');
-
-      all.push({
-        source: "workable",
-        organization: account.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-        id: job.id.toString(),
-        title: detail.title || job.title,
-        locationName: location,
-        workplaceType: job.workplace || "",
-        employmentType: job.type || "",
-        compensation: "",
-        description: stripHtml(detail.description || ''),
-        url: `https://apply.workable.com/${account}/j/${job.shortcode}/`,
-        timestamp: new Date().toISOString()
-      });
+          jobs.push({
+            source: "workable",
+            organization: account.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+            id: job.id.toString(),
+            title: detail.title || job.title,
+            locationName: location,
+            workplaceType: job.workplace || "",
+            employmentType: job.type || "",
+            compensation: "",
+            description: stripHtml(detail.description || ''),
+            url: `https://apply.workable.com/${account}/j/${job.shortcode}/`,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        return jobs;
+      } catch (err) {
+        console.error(`[workable] Error with ${account}:`, err.message);
+        return [];
+      }
+    });
+  
+  return results;
+  
+  results.forEach(result => {
+    if (result.status === 'fulfilled') {
+      all.push(...result.value);
     }
-  }
+  });
+  
+  console.log(`[workable] Scraped ${all.filter(j => j.source === 'workable').length} jobs`);
 }
 
