@@ -77,8 +77,10 @@ export async function scrapeWorkable(accounts, all) {
         console.log(`[workable] ${account}: ${jobList.length} jobs`);
         const jobs = [];
         
-        // Process ALL jobs (no limit)
-        for (const job of jobList) {
+        // Process up to 100 jobs per company (reasonable limit)
+        const jobsToProcess = jobList.slice(0, 100);
+        
+        for (const job of jobsToProcess) {
           await delay(100); // Small delay between job details
           const detail = await fetchWorkableDetail(account, job.shortcode);
           if (!detail) continue;
@@ -100,6 +102,10 @@ export async function scrapeWorkable(accounts, all) {
             url: `https://apply.workable.com/${account}/j/${job.shortcode}/`,
             timestamp: new Date().toISOString()
           });
+        }
+        
+        if (jobList.length > 100) {
+          console.log(`[workable] ${account}: Limited to 100 of ${jobList.length} jobs`);
         }
         
         return jobs;

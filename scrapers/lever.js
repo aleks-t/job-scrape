@@ -100,8 +100,10 @@ export async function scrapeLever(orgs, all) {
       console.log(`[lever] ${org}: ${jobs.length} jobs`);
       const jobsWithDetails = [];
       
-      // Process ALL jobs (no limit)
-      for (const j of jobs) {
+      // Process up to 100 jobs per company (reasonable limit)
+      const jobsToProcess = jobs.slice(0, 100);
+      
+      for (const j of jobsToProcess) {
         await delay(50); // Small delay between job details
         const detail = await fetchLeverDetail(j.url);
         
@@ -118,6 +120,10 @@ export async function scrapeLever(orgs, all) {
           url: j.url,
           timestamp: new Date().toISOString()
         });
+      }
+      
+      if (jobs.length > 100) {
+        console.log(`[lever] ${org}: Limited to 100 of ${jobs.length} jobs`);
       }
       
       return jobsWithDetails;
