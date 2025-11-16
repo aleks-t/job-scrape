@@ -273,28 +273,35 @@ function applyFilters() {
 
     const matchSource = src === "all" || j.source === src;
 
-    // Date filter
-    let matchDate = true;
-    if (dateFilter !== "all") {
-      const daysCount = getDaysCount(j.publishedDate);
-      if (daysCount === null) {
-        matchDate = false; // Exclude jobs without published date
-      } else {
-        switch(dateFilter) {
-          case "today":
-            matchDate = daysCount === 0;
-            break;
-          case "1day":
-            matchDate = daysCount <= 1;
-            break;
-          case "2days":
-            matchDate = daysCount <= 2;
-            break;
-          case "3days":
-            matchDate = daysCount <= 3;
-            break;
-        }
+    // Date filter - Primary: Trust SERP matching (recentlyPosted)
+    // Secondary: Check actual publishedDate if available
+    let matchDate = false;
+    const daysCount = getDaysCount(j.publishedDate);
+    
+    // If job was matched by SERP, it's already within 3 days (Google filtered it)
+    if (j.recentlyPosted === true) {
+      matchDate = true; // SERP already filtered to 3 days
+    } else if (daysCount !== null) {
+      // Jobs with published date but not SERP-matched: check actual date
+      switch(dateFilter) {
+        case "today":
+          matchDate = daysCount === 0;
+          break;
+        case "1day":
+          matchDate = daysCount <= 1;
+          break;
+        case "2days":
+          matchDate = daysCount <= 2;
+          break;
+        case "3days":
+          matchDate = daysCount <= 3;
+          break;
+        default:
+          matchDate = daysCount <= 3; // Default to 3 days
       }
+    } else {
+      // No SERP match and no published date: exclude
+      matchDate = false;
     }
 
     return matchText && matchLocation && matchSource && matchDate;
