@@ -22,12 +22,20 @@
 
     <div class="filters">
       <input id="search" placeholder="Search jobs…" />
+      <input id="location-search" placeholder="📍 Location (city, country, remote)…" />
         <select id="source-filter">
           <option value="all">All Sources</option>
           <option value="ashby">Ashby</option>
           <option value="greenhouse">Greenhouse</option>
           <option value="lever">Lever</option>
           <option value="workable">Workable</option>
+        </select>
+        <select id="date-filter">
+          <option value="all">All Dates</option>
+          <option value="today">Posted Today</option>
+          <option value="1day">Past 1 Day</option>
+          <option value="2days">Past 2 Days</option>
+          <option value="3days">Past 3 Days</option>
         </select>
       <select id="sort-by">
         <option value="recent">Most Recent</option>

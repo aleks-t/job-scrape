@@ -72,6 +72,7 @@ export async function scrapeAshby(orgs, all) {
             compensation: detail?.compensationTierSummary || j.compensationTierSummary || "",
             description: detail?.descriptionHtml ? stripHtml(detail.descriptionHtml) : "",
             url: `https://jobs.ashbyhq.com/${org}/${j.id}`,
+            publishedDate: detail?.publishedDate || j.publishedDate || null,
             timestamp: new Date().toISOString()
           });
         }

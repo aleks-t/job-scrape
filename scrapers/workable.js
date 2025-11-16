@@ -100,6 +100,7 @@ export async function scrapeWorkable(accounts, all) {
             compensation: "",
             description: stripHtml(detail.description || ''),
             url: `https://apply.workable.com/${account}/j/${job.shortcode}/`,
+            publishedDate: job.published || detail.published || null,
             timestamp: new Date().toISOString()
           });
         }

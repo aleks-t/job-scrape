@@ -25,7 +25,7 @@ import {
 // CONFIG
 // ================================
 const ARG_SEARCH = process.env.SEARCH_QUERY || "";
-const ARG_DAYS = parseInt(process.env.DAYS_BACK || "3", 10);
+const ARG_DAYS = 3; // Always 3 days for consistency
 const ARG_PAGES = parseInt(process.env.SERP_PAGES || "2", 10); // Fetch 2 pages by default
 
 // ================================

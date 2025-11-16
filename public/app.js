@@ -27,6 +27,36 @@ async function loadJobs() {
   applyFilters();
 }
 
+function getDaysAgo(publishedDate) {
+  if (!publishedDate) return null;
+  
+  try {
+    const published = new Date(publishedDate);
+    const now = new Date();
+    const diffTime = Math.abs(now - published);
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return '1 day ago';
+    return `${diffDays} days ago`;
+  } catch {
+    return null;
+  }
+}
+
+function getDaysCount(publishedDate) {
+  if (!publishedDate) return null;
+  
+  try {
+    const published = new Date(publishedDate);
+    const now = new Date();
+    const diffTime = Math.abs(now - published);
+    return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  } catch {
+    return null;
+  }
+}
+
 function renderJobs() {
   jobsContainer.innerHTML = "";
 
@@ -57,6 +87,11 @@ function renderJobs() {
       </div>
     ` : '';
 
+    // Get posted date
+    const daysAgo = getDaysAgo(j.publishedDate);
+    const postedBadge = daysAgo ? `<span class="posted-badge">🕐 ${daysAgo}</span>` : '';
+    const recentBadge = j.recentlyPosted ? `<span class="recent-badge">🆕 Recent</span>` : '';
+
     // Format the description into organized sections
     const fullDescription = j.description ? formatDescription(j.description) : '';
     const shortPreview = j.description ? 
@@ -71,7 +106,11 @@ function renderJobs() {
           </h3>
           <div class="job-company">${escapeHtml(j.organization)}</div>
         </div>
-        <span class="job-source ${j.source}">${j.source}</span>
+        <div class="job-badges">
+          ${postedBadge}
+          ${recentBadge}
+          <span class="job-source ${j.source}">${j.source}</span>
+        </div>
       </div>
       
       <div class="job-meta">
@@ -210,10 +249,12 @@ function formatBulletPoints(text) {
 
 function applyFilters() {
   const q = document.getElementById("search").value.toLowerCase();
+  const locationQ = document.getElementById("location-search").value.toLowerCase();
   const src = document.getElementById("source-filter").value;
+  const dateFilter = document.getElementById("date-filter").value;
   const sort = document.getElementById("sort-by").value;
 
-  console.log("Filtering - Source:", src, "Sort:", sort); // Debug log
+  console.log("Filtering - Source:", src, "Date:", dateFilter, "Sort:", sort); // Debug log
 
   filteredJobs = allJobs.filter(j => {
     // Filter out hidden companies
@@ -227,16 +268,52 @@ function applyFilters() {
       (j.locationName || "").toLowerCase().includes(q) ||
       (j.description || "").toLowerCase().includes(q);
 
+    const matchLocation = !locationQ || 
+      (j.locationName || "").toLowerCase().includes(locationQ);
+
     const matchSource = src === "all" || j.source === src;
 
-    return matchText && matchSource;
+    // Date filter
+    let matchDate = true;
+    if (dateFilter !== "all") {
+      const daysCount = getDaysCount(j.publishedDate);
+      if (daysCount === null) {
+        matchDate = false; // Exclude jobs without published date
+      } else {
+        switch(dateFilter) {
+          case "today":
+            matchDate = daysCount === 0;
+            break;
+          case "1day":
+            matchDate = daysCount <= 1;
+            break;
+          case "2days":
+            matchDate = daysCount <= 2;
+            break;
+          case "3days":
+            matchDate = daysCount <= 3;
+            break;
+        }
+      }
+    }
+
+    return matchText && matchLocation && matchSource && matchDate;
   });
 
   // Sort
   if (sort === "recent") {
-    filteredJobs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    // Sort by publishedDate first, then by timestamp
+    filteredJobs.sort((a, b) => {
+      const aDate = a.publishedDate ? new Date(a.publishedDate) : new Date(a.timestamp);
+      const bDate = b.publishedDate ? new Date(b.publishedDate) : new Date(b.timestamp);
+      return bDate - aDate;
+    });
   } else if (sort === "oldest") {
-    filteredJobs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    filteredJobs.sort((a, b) => {
+      const aDate = a.publishedDate ? new Date(a.publishedDate) : new Date(a.timestamp);
+      const bDate = b.publishedDate ? new Date(b.publishedDate) : new Date(b.timestamp);
+      return aDate - bDate;
+    });
   } else if (sort === "title") {
     filteredJobs.sort((a, b) => a.title.localeCompare(b.title));
   } else if (sort === "company") {
@@ -285,8 +362,13 @@ document.getElementById("next-page").onclick = () => {
 
 // Filters - prevent auto-reload from resetting filters
 document.getElementById("search").oninput = applyFilters;
+document.getElementById("location-search").oninput = applyFilters;
 document.getElementById("source-filter").onchange = function(e) {
   console.log("Source filter changed to:", e.target.value);
+  applyFilters();
+};
+document.getElementById("date-filter").onchange = function(e) {
+  console.log("Date filter changed to:", e.target.value);
   applyFilters();
 };
 document.getElementById("sort-by").onchange = function(e) {
@@ -443,14 +525,18 @@ loadJobs();
 // Auto-reload every 2 minutes instead of 30 seconds to reduce lag
 setInterval(() => {
   const currentSearch = document.getElementById("search").value;
+  const currentLocation = document.getElementById("location-search").value;
   const currentSource = document.getElementById("source-filter").value;
+  const currentDate = document.getElementById("date-filter").value;
   const currentSort = document.getElementById("sort-by").value;
   const currentPage = page;
   
   loadJobs().then(() => {
     // Restore filter states after reload
     document.getElementById("search").value = currentSearch;
+    document.getElementById("location-search").value = currentLocation;
     document.getElementById("source-filter").value = currentSource;
+    document.getElementById("date-filter").value = currentDate;
     document.getElementById("sort-by").value = currentSort;
     page = currentPage;
     applyFilters();

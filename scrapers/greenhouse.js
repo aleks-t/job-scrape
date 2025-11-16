@@ -49,6 +49,7 @@ export async function scrapeGreenhouse(orgs, all) {
           compensation: "",
           description: stripHtml(j.content || ""),
           url: j.absolute_url,
+          publishedDate: j.updated_at || null,
           timestamp: new Date().toISOString()
         }));
       } catch (err) {

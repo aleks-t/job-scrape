@@ -118,6 +118,7 @@ export async function scrapeLever(orgs, all) {
           compensation: "",
           description: detail.description,
           url: j.url,
+          publishedDate: null, // Lever doesn't provide dates in HTML
           timestamp: new Date().toISOString()
         });
       }
